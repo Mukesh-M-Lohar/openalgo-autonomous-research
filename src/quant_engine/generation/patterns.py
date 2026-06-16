@@ -41,16 +41,12 @@ def _gap_down(df: pd.DataFrame, params: dict) -> pd.Series:
 
 def _inside_bar(df: pd.DataFrame, params: dict) -> pd.Series:
     """Inside bar — current bar's range is within previous bar's range."""
-    return (
-        (df["high"] < df["high"].shift(1)) & (df["low"] > df["low"].shift(1))
-    ).fillna(False)
+    return ((df["high"] < df["high"].shift(1)) & (df["low"] > df["low"].shift(1))).fillna(False)
 
 
 def _outside_bar(df: pd.DataFrame, params: dict) -> pd.Series:
     """Outside bar — current bar engulfs previous bar's range."""
-    return (
-        (df["high"] > df["high"].shift(1)) & (df["low"] < df["low"].shift(1))
-    ).fillna(False)
+    return ((df["high"] > df["high"].shift(1)) & (df["low"] < df["low"].shift(1))).fillna(False)
 
 
 def _engulfing_bullish(df: pd.DataFrame, params: dict) -> pd.Series:

@@ -9,7 +9,6 @@ Grammar structure:
 
 from __future__ import annotations
 
-import itertools
 import random
 from dataclasses import dataclass
 
@@ -103,14 +102,18 @@ def generate_condition(config: GrammarConfig) -> ConditionNode:
     # Decide: compare to another indicator or a constant
     if _is_oscillator(ind_type):
         threshold = _sample_threshold(ind_type)
-        op = random.choice([CompareOp.GT, CompareOp.LT, CompareOp.CROSS_ABOVE, CompareOp.CROSS_BELOW])
+        op = random.choice(
+            [CompareOp.GT, CompareOp.LT, CompareOp.CROSS_ABOVE, CompareOp.CROSS_BELOW]
+        )
         return ConditionNode(left=left, op=op, right=threshold)
     else:
         # Compare two indicators (e.g., EMA cross, price vs band)
         if random.random() < 0.7:
             right_type = _compatible_indicator(ind_type, config.allowed_indicators)
             right = make_indicator_node(right_type, tf)
-            op = random.choice(CROSSOVER_OPS if _is_same_category(ind_type, right_type) else TREND_OPS)
+            op = random.choice(
+                CROSSOVER_OPS if _is_same_category(ind_type, right_type) else TREND_OPS
+            )
         else:
             right = make_indicator_node(ind_type, tf)
             op = random.choice(CROSSOVER_OPS)
@@ -178,10 +181,15 @@ def generate_strategy(config: GrammarConfig) -> StrategyGenome:
 
 # --- Helpers ---
 
+
 def _is_oscillator(ind_type: IndicatorType) -> bool:
     return ind_type in {
-        IndicatorType.RSI, IndicatorType.STOCH_K, IndicatorType.STOCH_D,
-        IndicatorType.CCI, IndicatorType.ADX, IndicatorType.ROC,
+        IndicatorType.RSI,
+        IndicatorType.STOCH_K,
+        IndicatorType.STOCH_D,
+        IndicatorType.CCI,
+        IndicatorType.ADX,
+        IndicatorType.ROC,
         IndicatorType.MOMENTUM,
     }
 
@@ -199,9 +207,7 @@ def _sample_threshold(ind_type: IndicatorType) -> float:
         return 0.0
 
 
-def _compatible_indicator(
-    ind_type: IndicatorType, allowed: list[IndicatorType]
-) -> IndicatorType:
+def _compatible_indicator(ind_type: IndicatorType, allowed: list[IndicatorType]) -> IndicatorType:
     """Pick a compatible indicator for comparison."""
     category = None
     for cat, members in INDICATOR_CATEGORIES.items():

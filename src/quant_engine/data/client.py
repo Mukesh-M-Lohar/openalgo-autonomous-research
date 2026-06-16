@@ -40,7 +40,9 @@ class OpenAlgoClient:
             logger.info(f"Cache hit: {symbol}/{exchange}/{interval}")
             return cached
 
-        logger.info(f"Fetching from OpenAlgo: {symbol}/{exchange}/{interval} {start_date}->{end_date}")
+        logger.info(
+            f"Fetching from OpenAlgo: {symbol}/{exchange}/{interval} {start_date}->{end_date}"
+        )
         self._rate_limit()
 
         payload = {

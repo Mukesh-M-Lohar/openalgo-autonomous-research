@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from quant_engine.backtest.engine import BacktestEngine
 from quant_engine.config import ResearchConfig
 from quant_engine.evolution.crossover import Crossover
 from quant_engine.evolution.mutator import Mutator
@@ -19,7 +20,6 @@ from quant_engine.generation.generator import StrategyGenerator
 from quant_engine.generation.grammar import GrammarConfig, generate_strategy
 from quant_engine.generation.indicators import INDICATOR_CATEGORIES
 from quant_engine.generation.validator import FastRejectValidator
-from quant_engine.backtest.engine import BacktestEngine
 from quant_engine.models.results import BacktestResult
 from quant_engine.models.strategy import StrategyGenome, TimeframeType, TradingStyle
 from quant_engine.storage.csv_backend import CsvStorage
@@ -214,6 +214,7 @@ class TestEndToEnd:
 
             # Verify JSON is valid
             import json
+
             with open(json_path) as f:
                 data = json.load(f)
             assert "strategy" in data
@@ -223,7 +224,9 @@ class TestEndToEnd:
         """Config files should load without errors."""
         from quant_engine.config import load_config
 
-        config = load_config(Path(__file__).parent.parent.parent / "config" / "default_research.yaml")
+        config = load_config(
+            Path(__file__).parent.parent.parent / "config" / "default_research.yaml"
+        )
         assert config.name == "Default Research"
         assert "intraday" in config.trading_styles
         assert config.generation.target_count == 10000

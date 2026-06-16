@@ -5,16 +5,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-import numpy as np
-import pytest
 
+from quant_engine.config import ObjectiveConfig, RankingConfig
+from quant_engine.evolution.fitness import weighted_fitness
 from quant_engine.models.results import BacktestResult, ValidationResult
 from quant_engine.ranking.pareto import compute_pareto_fronts
 from quant_engine.ranking.scorer import RankingEngine
-from quant_engine.config import RankingConfig
 from quant_engine.validation.monte_carlo import MonteCarloValidator
-from quant_engine.evolution.fitness import weighted_fitness
-from quant_engine.config import ObjectiveConfig
 
 
 class TestMonteCarlo:
@@ -121,8 +118,11 @@ class TestRankingEngine:
             {
                 "strategy_id": f"s{i}",
                 "backtest": BacktestResult(
-                    strategy_id=f"s{i}", sharpe=float(i), cagr=float(i * 10),
-                    profit_factor=float(i * 0.5), max_drawdown_pct=float(20 - i),
+                    strategy_id=f"s{i}",
+                    sharpe=float(i),
+                    cagr=float(i * 10),
+                    profit_factor=float(i * 0.5),
+                    max_drawdown_pct=float(20 - i),
                 ),
                 "validation": ValidationResult(strategy_id=f"s{i}", robustness_score=float(i * 10)),
             }
@@ -145,8 +145,11 @@ class TestRankingEngine:
             {
                 "strategy_id": f"s{i}",
                 "backtest": BacktestResult(
-                    strategy_id=f"s{i}", sharpe=float(i), cagr=float(i * 10),
-                    max_drawdown_pct=float(50 - i * 5), win_rate=0.5 + i * 0.03,
+                    strategy_id=f"s{i}",
+                    sharpe=float(i),
+                    cagr=float(i * 10),
+                    max_drawdown_pct=float(50 - i * 5),
+                    win_rate=0.5 + i * 0.03,
                 ),
             }
             for i in range(1, 11)

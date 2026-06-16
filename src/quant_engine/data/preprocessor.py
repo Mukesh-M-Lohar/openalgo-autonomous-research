@@ -8,7 +8,9 @@ import pandas as pd
 class DataPreprocessor:
     """Handles data splitting and multi-timeframe alignment."""
 
-    def __init__(self, train_pct: float = 0.7, validation_pct: float = 0.15, test_pct: float = 0.15):
+    def __init__(
+        self, train_pct: float = 0.7, validation_pct: float = 0.15, test_pct: float = 0.15
+    ):
         self._train_pct = train_pct
         self._validation_pct = validation_pct
         self._test_pct = test_pct
@@ -54,18 +56,22 @@ class DataPreprocessor:
             "1w": "1W",
         }
         rule = tf_map.get(target_tf, target_tf)
-        resampled = df.resample(rule).agg({
-            "open": "first",
-            "high": "max",
-            "low": "min",
-            "close": "last",
-            "volume": "sum",
-        }).dropna()
+        resampled = (
+            df.resample(rule)
+            .agg(
+                {
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                }
+            )
+            .dropna()
+        )
         return resampled
 
     @staticmethod
-    def align_timeframes(
-        base_df: pd.DataFrame, higher_tf_df: pd.DataFrame
-    ) -> pd.DataFrame:
+    def align_timeframes(base_df: pd.DataFrame, higher_tf_df: pd.DataFrame) -> pd.DataFrame:
         """Forward-fill higher timeframe data to align with base timeframe index."""
         return higher_tf_df.reindex(base_df.index, method="ffill")

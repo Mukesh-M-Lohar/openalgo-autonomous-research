@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import time
 import uuid
 
 import pandas as pd
@@ -76,7 +74,6 @@ class PipelineOrchestrator:
             full_df = symbol_data[primary_tf]
             train_df, val_df, test_df = preprocessor.split(full_df)
             train_data = {primary_tf: train_df}
-            val_data = {primary_tf: val_df}
             test_data = {primary_tf: test_df}
 
             # Stage 2: Generate strategies
@@ -100,12 +97,12 @@ class PipelineOrchestrator:
                 return run_id
 
             # Stage 6: Walk-forward validation
-            wf_results = self._walk_forward(run_id, survivors, symbol_data)
+            self._walk_forward(run_id, survivors, symbol_data)
             if self._stop_requested:
                 return run_id
 
             # Stage 7: Out-of-sample testing
-            oos_results = self._out_of_sample(run_id, survivors, backtest_results, test_data)
+            self._out_of_sample(run_id, survivors, backtest_results, test_data)
             if self._stop_requested:
                 return run_id
 
@@ -168,7 +165,10 @@ class PipelineOrchestrator:
         progress.passed = len(strategies)
 
         if self._config.output.save_all_candidates:
-            summaries = [{"id": s.id, "style": s.trading_style.value, "fingerprint": s.fingerprint()} for s in strategies]
+            summaries = [
+                {"id": s.id, "style": s.trading_style.value, "fingerprint": s.fingerprint()}
+                for s in strategies
+            ]
             self._storage.save_generated(run_id, summaries)
 
         logger.info(f"Generated {len(strategies)} unique strategies")
@@ -234,13 +234,15 @@ class PipelineOrchestrator:
         for strategy in strategies:
             bt = results.get(strategy.id)
             if bt is None:
-                rejections.append(RejectionRecord(
-                    strategy_id=strategy.id,
-                    stage="backtest_filter",
-                    rejection_reason="no_backtest_result",
-                    threshold="required",
-                    actual_value="none",
-                ))
+                rejections.append(
+                    RejectionRecord(
+                        strategy_id=strategy.id,
+                        stage="backtest_filter",
+                        rejection_reason="no_backtest_result",
+                        threshold="required",
+                        actual_value="none",
+                    )
+                )
                 continue
 
             rejection = self._check_bt_filters(strategy.id, bt, filters)
@@ -257,7 +259,12 @@ class PipelineOrchestrator:
         checks = [
             ("min_trades", bt.total_trades, filters.min_trades, "total_trades_below_min"),
             ("min_sharpe", bt.sharpe, filters.min_sharpe, "sharpe_below_min"),
-            ("min_profit_factor", bt.profit_factor, filters.min_profit_factor, "profit_factor_below_min"),
+            (
+                "min_profit_factor",
+                bt.profit_factor,
+                filters.min_profit_factor,
+                "profit_factor_below_min",
+            ),
         ]
         for threshold_name, actual, threshold, reason in checks:
             if actual < threshold:
@@ -329,7 +336,7 @@ class PipelineOrchestrator:
 
             # Monte Carlo needs trades — re-run quick backtest to get them
             engine = BacktestEngine(cost_model=self._config.cost_model)
-            bt_run = engine.run(s, data)
+            engine.run(s, data)
             trades = []  # simplified: use backtest result metrics
 
             mc_result = mc.validate(bt, trades)
@@ -342,9 +349,13 @@ class PipelineOrchestrator:
                 **ps_result,
                 **st_result,
                 "robustness_score": round(
-                    (mc_result.get("monte_carlo_score", 0)
-                     + ps_result.get("param_stability_score", 0)
-                     + st_result.get("stress_test_score", 0)) / 3, 2
+                    (
+                        mc_result.get("monte_carlo_score", 0)
+                        + ps_result.get("param_stability_score", 0)
+                        + st_result.get("stress_test_score", 0)
+                    )
+                    / 3,
+                    2,
                 ),
             }
             results[s.id] = combined
@@ -423,11 +434,13 @@ class PipelineOrchestrator:
                 stress_test_score=rob.get("stress_test_score", 0),
                 robustness_score=rob.get("robustness_score", 0),
             )
-            strategies_data.append({
-                "strategy_id": s.id,
-                "backtest": bt,
-                "validation": val,
-            })
+            strategies_data.append(
+                {
+                    "strategy_id": s.id,
+                    "backtest": bt,
+                    "validation": val,
+                }
+            )
 
         ranked = ranking_engine.rank(strategies_data)
 
@@ -455,11 +468,13 @@ class PipelineOrchestrator:
         details = []
         for s in strategies:
             if s.id in rejected_ids:
-                details.append({
-                    "id": s.id,
-                    "trading_style": s.trading_style.value,
-                    "entry_summary": str(s.entry_long.to_dict()),
-                    "exit_summary": str(s.exit_long.to_dict()),
-                    "timeframes": ",".join(tf.value for tf in s.timeframes_used),
-                })
+                details.append(
+                    {
+                        "id": s.id,
+                        "trading_style": s.trading_style.value,
+                        "entry_summary": str(s.entry_long.to_dict()),
+                        "exit_summary": str(s.exit_long.to_dict()),
+                        "timeframes": ",".join(tf.value for tf in s.timeframes_used),
+                    }
+                )
         self._storage.save_rejection_details(run_id, details)

@@ -94,7 +94,9 @@ class StrategyExporter:
             timeframes=strategy.timeframes_used,
         )
 
-    def _generate_script_inline(self, strategy: StrategyGenome, backtest: BacktestResult | None) -> str:
+    def _generate_script_inline(
+        self, strategy: StrategyGenome, backtest: BacktestResult | None
+    ) -> str:
         """Fallback: generate script without template."""
         indicators = self._extract_indicator_code(strategy.entry_long)
         entry_code = self._condition_to_python(strategy.entry_long)
@@ -239,10 +241,14 @@ if __name__ == "__main__":
         lines.append("    signals = pd.Series(False, index=df.index)")
         if exit_rule.stop_loss_pct:
             lines.append(f"    # Stop loss: {exit_rule.stop_loss_pct}%")
-            lines.append(f'    signals = signals | (df["close"] <= entry_price * (1 - {exit_rule.stop_loss_pct}/100))')
+            lines.append(
+                f'    signals = signals | (df["close"] <= entry_price * (1 - {exit_rule.stop_loss_pct}/100))'
+            )
         if exit_rule.take_profit_pct:
             lines.append(f"    # Take profit: {exit_rule.take_profit_pct}%")
-            lines.append(f'    signals = signals | (df["close"] >= entry_price * (1 + {exit_rule.take_profit_pct}/100))')
+            lines.append(
+                f'    signals = signals | (df["close"] >= entry_price * (1 + {exit_rule.take_profit_pct}/100))'
+            )
         lines.append("    return signals")
         return "\n".join(lines)
 

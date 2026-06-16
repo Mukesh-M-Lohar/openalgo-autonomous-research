@@ -59,9 +59,7 @@ def _ema(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
 def _wma(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
     period = int(params.get("period", 20))
     weights = np.arange(1, period + 1, dtype=float)
-    return src.rolling(window=period).apply(
-        lambda x: np.dot(x, weights) / weights.sum(), raw=True
-    )
+    return src.rolling(window=period).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
 
 
 def _vwma(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
@@ -90,8 +88,8 @@ def _macd(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
 
 
 def _macd_signal(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
-    fast = int(params.get("fast_period", 12))
-    slow = int(params.get("slow_period", 26))
+    int(params.get("fast_period", 12))
+    int(params.get("slow_period", 26))
     signal_period = int(params.get("signal_period", 9))
     macd_line = _macd(df, src, params)
     return macd_line.ewm(span=signal_period, adjust=False).mean()
@@ -305,9 +303,21 @@ INDICATOR_PARAM_RANGES: dict[IndicatorType, dict[str, tuple[float, float, float]
     IndicatorType.WMA: {"period": (5, 200, 5)},
     IndicatorType.VWMA: {"period": (5, 50, 5)},
     IndicatorType.RSI: {"period": (7, 28, 7)},
-    IndicatorType.MACD: {"fast_period": (8, 16, 2), "slow_period": (20, 30, 2), "signal_period": (7, 12, 1)},
-    IndicatorType.MACD_SIGNAL: {"fast_period": (8, 16, 2), "slow_period": (20, 30, 2), "signal_period": (7, 12, 1)},
-    IndicatorType.MACD_HIST: {"fast_period": (8, 16, 2), "slow_period": (20, 30, 2), "signal_period": (7, 12, 1)},
+    IndicatorType.MACD: {
+        "fast_period": (8, 16, 2),
+        "slow_period": (20, 30, 2),
+        "signal_period": (7, 12, 1),
+    },
+    IndicatorType.MACD_SIGNAL: {
+        "fast_period": (8, 16, 2),
+        "slow_period": (20, 30, 2),
+        "signal_period": (7, 12, 1),
+    },
+    IndicatorType.MACD_HIST: {
+        "fast_period": (8, 16, 2),
+        "slow_period": (20, 30, 2),
+        "signal_period": (7, 12, 1),
+    },
     IndicatorType.ADX: {"period": (7, 28, 7)},
     IndicatorType.ATR: {"period": (7, 28, 7)},
     IndicatorType.BBANDS_UPPER: {"period": (10, 30, 5), "std_dev": (1.5, 3.0, 0.5)},
@@ -332,22 +342,37 @@ INDICATOR_PARAM_RANGES: dict[IndicatorType, dict[str, tuple[float, float, float]
 # Categorization for generation filtering
 INDICATOR_CATEGORIES: dict[str, list[IndicatorType]] = {
     "trend": [
-        IndicatorType.SMA, IndicatorType.EMA, IndicatorType.WMA,
-        IndicatorType.MACD, IndicatorType.MACD_SIGNAL, IndicatorType.MACD_HIST,
-        IndicatorType.ADX, IndicatorType.SUPERTREND,
+        IndicatorType.SMA,
+        IndicatorType.EMA,
+        IndicatorType.WMA,
+        IndicatorType.MACD,
+        IndicatorType.MACD_SIGNAL,
+        IndicatorType.MACD_HIST,
+        IndicatorType.ADX,
+        IndicatorType.SUPERTREND,
     ],
     "momentum": [
-        IndicatorType.RSI, IndicatorType.STOCH_K, IndicatorType.STOCH_D,
-        IndicatorType.CCI, IndicatorType.ROC, IndicatorType.MOMENTUM,
+        IndicatorType.RSI,
+        IndicatorType.STOCH_K,
+        IndicatorType.STOCH_D,
+        IndicatorType.CCI,
+        IndicatorType.ROC,
+        IndicatorType.MOMENTUM,
     ],
     "volatility": [
-        IndicatorType.ATR, IndicatorType.BBANDS_UPPER, IndicatorType.BBANDS_LOWER,
-        IndicatorType.BBANDS_MIDDLE, IndicatorType.KELTNER_UPPER,
-        IndicatorType.KELTNER_LOWER, IndicatorType.DONCHIAN_UPPER,
+        IndicatorType.ATR,
+        IndicatorType.BBANDS_UPPER,
+        IndicatorType.BBANDS_LOWER,
+        IndicatorType.BBANDS_MIDDLE,
+        IndicatorType.KELTNER_UPPER,
+        IndicatorType.KELTNER_LOWER,
+        IndicatorType.DONCHIAN_UPPER,
         IndicatorType.DONCHIAN_LOWER,
     ],
     "volume": [
-        IndicatorType.VWMA, IndicatorType.VWAP, IndicatorType.OBV,
+        IndicatorType.VWMA,
+        IndicatorType.VWAP,
+        IndicatorType.OBV,
         IndicatorType.VOLUME_SMA,
     ],
 }
