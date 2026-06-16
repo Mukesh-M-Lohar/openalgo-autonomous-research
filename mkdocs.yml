@@ -1,0 +1,55 @@
+site_name: OpenAlgo Quant Research Engine
+site_description: Autonomous strategy discovery, validation, and export
+site_url: https://your-username.github.io/openalgo-quant-engine/
+
+repo_url: https://github.com/your-username/openalgo-quant-engine
+repo_name: openalgo-quant-engine
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - tables
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started.md
+      - Quick Start: quick-start.md
+  - Developer Guide:
+      - Setup: developer-guide.md
+      - Contributing: contributing.md
+      - Low-Level Design: low-level-design.md
+  - API Reference:
+      - REST Endpoints: api/api-reference.md
+  - Guides:
+      - Adding Indicators: guides/adding-indicators.md
+      - Configuration: guides/configuration.md
+      - Understanding Rejections: guides/rejections.md

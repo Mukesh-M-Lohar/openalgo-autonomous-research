@@ -1,0 +1,74 @@
+"""
+Auto-generated Signal Strategy: {{ strategy.id }}
+Trading Style: {{ strategy.trading_style.value | upper }}
+Timeframes: {{ strategy.timeframes_used | map(attribute='value') | join(', ') }}
+Product Type: {{ strategy.product_type }}
+{% if backtest %}
+Backtest Metrics:
+  Sharpe: {{ backtest.sharpe }}
+  CAGR: {{ backtest.cagr }}%
+  Profit Factor: {{ backtest.profit_factor }}
+  Max Drawdown: {{ backtest.max_drawdown_pct }}%
+  Win Rate: {{ (backtest.win_rate * 100) | round(1) }}%
+  Total Trades: {{ backtest.total_trades }}
+{% endif %}
+NOTE: This is a SIGNAL GENERATOR only. It does NOT place orders.
+"""
+
+import pandas as pd
+import numpy as np
+
+
+def _compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta).where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def _compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    high, low, close = df["high"], df["low"], df["close"]
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+
+
+def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute all indicators needed for this strategy."""
+{{ indicators }}
+    return df
+
+
+def generate_entry_signal(df: pd.DataFrame) -> pd.Series:
+    """Generate entry (buy) signal. Returns boolean Series."""
+    df = compute_indicators(df)
+    return {{ entry_conditions }}
+
+
+def generate_exit_signal(df: pd.DataFrame, entry_price: float) -> pd.Series:
+    """Generate exit signal based on price levels."""
+{{ exit_logic }}
+
+
+def get_strategy_params() -> dict:
+    """Return strategy parameters for reference."""
+    return {
+        "id": "{{ strategy.id }}",
+        "trading_style": "{{ strategy.trading_style.value }}",
+        "product_type": "{{ strategy.product_type }}",
+        "forced_exit_time": {{ strategy.forced_exit_time | tojson }},
+        "stop_loss_pct": {{ strategy.exit_long.stop_loss_pct }},
+        "take_profit_pct": {{ strategy.exit_long.take_profit_pct }},
+        "trailing_stop_pct": {{ strategy.exit_long.trailing_stop_pct }},
+    }
+
+
+if __name__ == "__main__":
+    print("Strategy: {{ strategy.id }}")
+    print("Style: {{ strategy.trading_style.value }}")
+    print("This is a signal generator. Feed OHLCV data to generate_entry_signal().")
