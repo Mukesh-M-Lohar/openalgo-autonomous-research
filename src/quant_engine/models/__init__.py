@@ -1,3 +1,4 @@
+from quant_engine.models.results import BacktestResult, RejectionRecord, ValidationResult
 from quant_engine.models.strategy import (
     CompareOp,
     CompositeCondition,
@@ -10,7 +11,6 @@ from quant_engine.models.strategy import (
     TimeframeType,
     TradingStyle,
 )
-from quant_engine.models.results import BacktestResult, RejectionRecord, ValidationResult
 
 __all__ = [
     "BacktestResult",

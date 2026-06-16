@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from quant_engine.backtest.metrics import compute_metrics
@@ -21,7 +19,6 @@ from quant_engine.models.strategy import (
     IndicatorNode,
     LogicOp,
     StrategyGenome,
-    TimeframeType,
 )
 
 logger = logging.getLogger(__name__)
@@ -258,15 +255,17 @@ class BacktestEngine:
                     slippage = self._cost.slippage_pct * 2
                     net_pnl_pct = pnl_pct - commission - slippage
 
-                    trades.append({
-                        "entry_time": index[entry_bar],
-                        "exit_time": index[i],
-                        "entry_price": entry_price,
-                        "exit_price": exit_price,
-                        "pnl_pct": net_pnl_pct,
-                        "bars_held": bars_held,
-                        "exit_reason": exit_reason,
-                    })
+                    trades.append(
+                        {
+                            "entry_time": index[entry_bar],
+                            "exit_time": index[i],
+                            "entry_price": entry_price,
+                            "exit_price": exit_price,
+                            "pnl_pct": net_pnl_pct,
+                            "bars_held": bars_held,
+                            "exit_reason": exit_reason,
+                        }
+                    )
                     position_open = False
 
             elif entries.iloc[i] and not position_open:
@@ -282,15 +281,17 @@ class BacktestEngine:
             pnl_pct = (exit_price - entry_price) / entry_price * 100
             commission = self._cost.commission_pct * 2
             slippage = self._cost.slippage_pct * 2
-            trades.append({
-                "entry_time": index[entry_bar],
-                "exit_time": index[-1],
-                "entry_price": entry_price,
-                "exit_price": exit_price,
-                "pnl_pct": pnl_pct - commission - slippage,
-                "bars_held": bars_held,
-                "exit_reason": "end_of_data",
-            })
+            trades.append(
+                {
+                    "entry_time": index[entry_bar],
+                    "exit_time": index[-1],
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "pnl_pct": pnl_pct - commission - slippage,
+                    "bars_held": bars_held,
+                    "exit_reason": "end_of_data",
+                }
+            )
 
         return trades
 
@@ -302,5 +303,5 @@ class BacktestEngine:
             pnl = capital * (trade["pnl_pct"] / 100)
             capital += pnl
             if trade["exit_time"] in equity.index:
-                equity.loc[trade["exit_time"]:] = capital
+                equity.loc[trade["exit_time"] :] = capital
         return pd.DataFrame({"equity": equity})

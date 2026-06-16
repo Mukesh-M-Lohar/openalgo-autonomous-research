@@ -5,6 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from quant_engine.config import FastRejectFilters, ResearchConfig
@@ -20,20 +22,15 @@ from quant_engine.generation.patterns import PATTERN_FUNCTIONS, detect_pattern
 from quant_engine.generation.validator import FastRejectValidator
 from quant_engine.models.strategy import (
     CompareOp,
-    CompositeCondition,
     ConditionNode,
     ExitRule,
     IndicatorNode,
     IndicatorType,
-    LogicOp,
     PriceSource,
     StrategyGenome,
     TimeframeType,
     TradingStyle,
 )
-
-import numpy as np
-import pandas as pd
 
 
 @pytest.fixture
@@ -217,7 +214,7 @@ class TestValidator:
     def test_passes_valid_strategy(self, grammar_config):
         strategy = generate_strategy(grammar_config)
         validator = FastRejectValidator(FastRejectFilters())
-        result = validator.validate(strategy)
+        validator.validate(strategy)
         # Most generated strategies should pass
         # (some may fail complexity check depending on random seed)
 

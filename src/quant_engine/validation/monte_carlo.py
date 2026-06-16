@@ -61,7 +61,9 @@ class MonteCarloValidator:
             sim_max_drawdowns[i] = abs(drawdowns.min()) * 100
             mean_ret = noisy_pnls.mean()
             std_ret = noisy_pnls.std()
-            sim_sharpes[i] = (mean_ret / std_ret * np.sqrt(min(n_trades, 252))) if std_ret > 0 else 0
+            sim_sharpes[i] = (
+                (mean_ret / std_ret * np.sqrt(min(n_trades, 252))) if std_ret > 0 else 0
+            )
 
         # Confidence intervals
         p5_idx = int(self._n_sims * 0.05)
@@ -78,7 +80,7 @@ class MonteCarloValidator:
         profitable_sims = (sim_total_pnls > 0).sum() / self._n_sims
         positive_sharpe_sims = (sim_sharpes > 0).sum() / self._n_sims
 
-        score = (profitable_sims * 50 + positive_sharpe_sims * 50)
+        score = profitable_sims * 50 + positive_sharpe_sims * 50
 
         return {
             "monte_carlo_score": round(score, 2),

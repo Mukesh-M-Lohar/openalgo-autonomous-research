@@ -6,7 +6,7 @@ import logging
 import multiprocessing as mp
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +53,12 @@ class WorkerPool:
 
         self.start()
         chunks = [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
-        logger.info(f"Processing {len(items)} items in {len(chunks)} chunks across {self._max_workers} workers")
+        logger.info(
+            f"Processing {len(items)} items in {len(chunks)} chunks across {self._max_workers} workers"
+        )
 
         results: list[R] = []
-        futures = {
-            self._executor.submit(fn, chunk): idx
-            for idx, chunk in enumerate(chunks)
-        }
+        futures = {self._executor.submit(fn, chunk): idx for idx, chunk in enumerate(chunks)}
 
         completed = 0
         for future in as_completed(futures):

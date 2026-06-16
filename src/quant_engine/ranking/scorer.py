@@ -45,12 +45,14 @@ class RankingEngine:
             else:
                 score = weighted_fitness(bt, val, self._config.objectives)
 
-            ranked.append(RankedStrategy(
-                strategy_id=item["strategy_id"],
-                backtest=bt,
-                validation=val or ValidationResult(strategy_id=item["strategy_id"]),
-                composite_score=score,
-            ))
+            ranked.append(
+                RankedStrategy(
+                    strategy_id=item["strategy_id"],
+                    backtest=bt,
+                    validation=val or ValidationResult(strategy_id=item["strategy_id"]),
+                    composite_score=score,
+                )
+            )
 
         # Sort by composite score
         ranked.sort(key=lambda r: r.composite_score, reverse=True)
@@ -90,9 +92,7 @@ class RankingEngine:
         }
         return winners
 
-    def compose_portfolios(
-        self, ranked: list[RankedStrategy]
-    ) -> dict[str, list[RankedStrategy]]:
+    def compose_portfolios(self, ranked: list[RankedStrategy]) -> dict[str, list[RankedStrategy]]:
         """Compose conservative, balanced, and aggressive portfolios."""
         if len(ranked) < 3:
             return {"balanced": ranked}
@@ -115,9 +115,7 @@ class RankingEngine:
             "aggressive": aggressive,
         }
 
-    def _robustness_first_score(
-        self, bt: BacktestResult, val: ValidationResult | None
-    ) -> float:
+    def _robustness_first_score(self, bt: BacktestResult, val: ValidationResult | None) -> float:
         """Score that prioritizes robustness over raw returns."""
         if val is None:
             return weighted_fitness(bt, val, self._config.objectives) * 0.5

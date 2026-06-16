@@ -61,14 +61,16 @@ class CsvStorage:
             return
         rows = []
         for d in details:
-            rows.append({
-                "strategy_id": d.get("id", ""),
-                "trading_style": d.get("trading_style", ""),
-                "entry_indicators": d.get("entry_summary", ""),
-                "exit_type": d.get("exit_summary", ""),
-                "timeframes": d.get("timeframes", ""),
-                "params_json": json.dumps(d, default=str),
-            })
+            rows.append(
+                {
+                    "strategy_id": d.get("id", ""),
+                    "trading_style": d.get("trading_style", ""),
+                    "entry_indicators": d.get("entry_summary", ""),
+                    "exit_type": d.get("exit_summary", ""),
+                    "timeframes": d.get("timeframes", ""),
+                    "params_json": json.dumps(d, default=str),
+                }
+            )
         df = pd.DataFrame(rows)
         path = self._run_dir(run_id) / "rejected_details.csv"
         if path.exists():

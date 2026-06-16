@@ -72,9 +72,7 @@ class GenerationConfig(BaseModel):
     target_count: int = 100000
     max_conditions_per_entry: int = 4
     allow_short: bool = False
-    indicator_categories: list[str] = Field(
-        default=["trend", "momentum", "volatility", "volume"]
-    )
+    indicator_categories: list[str] = Field(default=["trend", "momentum", "volatility", "volume"])
     multi_timeframe: bool = True
 
 
@@ -96,13 +94,15 @@ class ObjectiveConfig(BaseModel):
 
 class RankingConfig(BaseModel):
     mode: Literal["weighted", "pareto", "constraint", "robustness_first"] = "robustness_first"
-    objectives: list[ObjectiveConfig] = Field(default_factory=lambda: [
-        ObjectiveConfig(metric="sharpe", weight=0.3),
-        ObjectiveConfig(metric="sortino", weight=0.2),
-        ObjectiveConfig(metric="max_drawdown", weight=0.2, direction="minimize"),
-        ObjectiveConfig(metric="profit_factor", weight=0.15),
-        ObjectiveConfig(metric="cagr", weight=0.15),
-    ])
+    objectives: list[ObjectiveConfig] = Field(
+        default_factory=lambda: [
+            ObjectiveConfig(metric="sharpe", weight=0.3),
+            ObjectiveConfig(metric="sortino", weight=0.2),
+            ObjectiveConfig(metric="max_drawdown", weight=0.2, direction="minimize"),
+            ObjectiveConfig(metric="profit_factor", weight=0.15),
+            ObjectiveConfig(metric="cagr", weight=0.15),
+        ]
+    )
     export_top_n: int = 20
     export_per_category: int = 5
 
@@ -132,29 +132,31 @@ class ResearchConfig(BaseModel):
     name: str = "Unnamed Research"
     description: str = ""
     trading_styles: list[str] = Field(default=["intraday", "swing"])
-    style_overrides: dict[str, StyleOverride] = Field(default_factory=lambda: {
-        "intraday": StyleOverride(
-            max_hold_bars=75,
-            forced_exit_time="15:15",
-            product_type="MIS",
-            min_trades=200,
-        ),
-        "btst": StyleOverride(
-            min_hold_bars=50,
-            max_hold_bars=150,
-            product_type="CNC",
-        ),
-        "swing": StyleOverride(
-            min_hold_bars=10,
-            max_hold_bars=360,
-            product_type="CNC",
-        ),
-        "positional": StyleOverride(
-            min_hold_bars=5,
-            product_type="CNC",
-            min_trades=20,
-        ),
-    })
+    style_overrides: dict[str, StyleOverride] = Field(
+        default_factory=lambda: {
+            "intraday": StyleOverride(
+                max_hold_bars=75,
+                forced_exit_time="15:15",
+                product_type="MIS",
+                min_trades=200,
+            ),
+            "btst": StyleOverride(
+                min_hold_bars=50,
+                max_hold_bars=150,
+                product_type="CNC",
+            ),
+            "swing": StyleOverride(
+                min_hold_bars=10,
+                max_hold_bars=360,
+                product_type="CNC",
+            ),
+            "positional": StyleOverride(
+                min_hold_bars=5,
+                product_type="CNC",
+                min_trades=20,
+            ),
+        }
+    )
     data: DataConfig = DataConfig()
     generation: GenerationConfig = GenerationConfig()
     filters: FiltersConfig = FiltersConfig()

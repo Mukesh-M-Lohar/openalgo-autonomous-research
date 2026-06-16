@@ -6,7 +6,7 @@ import logging
 import random
 from typing import Iterator
 
-from quant_engine.config import GenerationConfig, ResearchConfig, StyleOverride
+from quant_engine.config import ResearchConfig, StyleOverride
 from quant_engine.generation.grammar import GrammarConfig, generate_strategy
 from quant_engine.generation.indicators import INDICATOR_CATEGORIES
 from quant_engine.models.strategy import (

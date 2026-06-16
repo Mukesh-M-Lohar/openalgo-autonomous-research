@@ -33,9 +33,7 @@ class WalkForwardValidator:
         self._engine = BacktestEngine(cost_model=cost_model)
         self._preprocessor = DataPreprocessor()
 
-    def validate(
-        self, strategy: StrategyGenome, data: dict[str, pd.DataFrame]
-    ) -> dict:
+    def validate(self, strategy: StrategyGenome, data: dict[str, pd.DataFrame]) -> dict:
         """Run walk-forward analysis.
 
         Returns dict with walk_forward_score, walk_forward_consistency, window details.
@@ -58,19 +56,23 @@ class WalkForwardValidator:
             test_data = {primary_tf: test_df}
             result = self._engine.run(strategy, test_data)
             if result is not None:
-                window_results.append({
-                    "sharpe": result.sharpe,
-                    "profit_factor": result.profit_factor,
-                    "trades": result.total_trades,
-                    "profitable": result.net_profit_pct > 0,
-                })
+                window_results.append(
+                    {
+                        "sharpe": result.sharpe,
+                        "profit_factor": result.profit_factor,
+                        "trades": result.total_trades,
+                        "profitable": result.net_profit_pct > 0,
+                    }
+                )
             else:
-                window_results.append({
-                    "sharpe": 0.0,
-                    "profit_factor": 0.0,
-                    "trades": 0,
-                    "profitable": False,
-                })
+                window_results.append(
+                    {
+                        "sharpe": 0.0,
+                        "profit_factor": 0.0,
+                        "trades": 0,
+                        "profitable": False,
+                    }
+                )
 
         profitable_windows = sum(1 for w in window_results if w["profitable"])
         consistency = profitable_windows / len(window_results)

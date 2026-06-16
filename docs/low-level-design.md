@@ -204,7 +204,7 @@ class BacktestEngine:
 **Signal Evaluation Pipeline:**
 ```
 StrategyGenome.entry_long (AST)
-    → _eval_condition_tree(tree, df, all_data) 
+    → _eval_condition_tree(tree, df, all_data)
     → Boolean Series (True = entry signal)
 
 For each IndicatorNode in tree:

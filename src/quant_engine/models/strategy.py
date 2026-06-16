@@ -148,16 +148,8 @@ class ConditionNode:
 
     @classmethod
     def from_dict(cls, d: dict) -> ConditionNode:
-        left = (
-            IndicatorNode.from_dict(d["left"])
-            if isinstance(d["left"], dict)
-            else d["left"]
-        )
-        right = (
-            IndicatorNode.from_dict(d["right"])
-            if isinstance(d["right"], dict)
-            else d["right"]
-        )
+        left = IndicatorNode.from_dict(d["left"]) if isinstance(d["left"], dict) else d["left"]
+        right = IndicatorNode.from_dict(d["right"]) if isinstance(d["right"], dict) else d["right"]
         return cls(left=left, op=CompareOp(d["op"]), right=right)
 
 

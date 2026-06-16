@@ -10,24 +10,21 @@ jobs:
   lint:
     name: Lint & Format Check
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install pre-commit
         run: |
-          pip install ruff
+          pip install pre-commit
 
-      - name: Run Ruff linter
-        run: ruff check src/ tests/
-
-      - name: Run Ruff format check
-        run: ruff format --check src/ tests/
-
+      - name: Run pre-commit
+        run: |
+          pre-commit run --all-files
   test:
     name: Unit & Integration Tests
     runs-on: ${{ matrix.os }}

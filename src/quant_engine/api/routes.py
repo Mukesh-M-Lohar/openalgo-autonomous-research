@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import threading
-from pathlib import Path
-
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse
 
 from quant_engine.api.schemas import (
     ExportResponse,
@@ -15,7 +11,7 @@ from quant_engine.api.schemas import (
     RunStatusResponse,
     WinnersResponse,
 )
-from quant_engine.config import ResearchConfig, load_config
+from quant_engine.config import ResearchConfig
 from quant_engine.export.formatter import StrategyExporter
 from quant_engine.pipeline.orchestrator import PipelineOrchestrator
 from quant_engine.storage.csv_backend import CsvStorage
@@ -111,7 +107,7 @@ def create_app() -> FastAPI:
         if strategy_data is None:
             raise HTTPException(status_code=404, detail=f"Strategy {strategy_id} not found")
 
-        exporter = StrategyExporter(f"./data/runs/{run_id}/exports")
+        StrategyExporter(f"./data/runs/{run_id}/exports")
         # Note: full export requires reconstructing StrategyGenome from stored data
         return ExportResponse(
             strategy_id=strategy_id,

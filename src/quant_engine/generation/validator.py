@@ -132,7 +132,7 @@ class FastRejectValidator:
 
         conditions = _extract_conditions(s.entry_long)
         for i, c1 in enumerate(conditions):
-            for c2 in conditions[i + 1:]:
+            for c2 in conditions[i + 1 :]:
                 if _are_contradictory(c1, c2):
                     return RejectionRecord(
                         strategy_id=s.id,

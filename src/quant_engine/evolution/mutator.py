@@ -4,15 +4,12 @@ from __future__ import annotations
 
 import random
 
-import numpy as np
-
 from quant_engine.generation.grammar import (
     GrammarConfig,
     generate_condition,
-    generate_exit,
     sample_indicator_params,
 )
-from quant_engine.generation.indicators import INDICATOR_CATEGORIES, INDICATOR_PARAM_RANGES
+from quant_engine.generation.indicators import INDICATOR_CATEGORIES
 from quant_engine.models.strategy import (
     CompareOp,
     CompositeCondition,
@@ -20,7 +17,6 @@ from quant_engine.models.strategy import (
     ConditionTree,
     ExitRule,
     IndicatorNode,
-    IndicatorType,
     LogicOp,
     StrategyGenome,
 )
@@ -101,9 +97,7 @@ class Mutator:
                 children = entry.children + (new_cond,)
                 return CompositeCondition(logic=entry.logic, children=children), exit_rule
             else:
-                return CompositeCondition(
-                    logic=LogicOp.AND, children=(entry, new_cond)
-                ), exit_rule
+                return CompositeCondition(logic=LogicOp.AND, children=(entry, new_cond)), exit_rule
         return entry, exit_rule
 
     def _mutate_exit(

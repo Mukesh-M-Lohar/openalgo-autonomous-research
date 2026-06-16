@@ -7,10 +7,8 @@ import random
 
 from quant_engine.config import EvolutionConfig
 from quant_engine.evolution.crossover import Crossover
-from quant_engine.evolution.fitness import weighted_fitness
 from quant_engine.evolution.mutator import Mutator
 from quant_engine.generation.grammar import GrammarConfig
-from quant_engine.models.results import BacktestResult, ValidationResult
 from quant_engine.models.strategy import StrategyGenome
 
 logger = logging.getLogger(__name__)
