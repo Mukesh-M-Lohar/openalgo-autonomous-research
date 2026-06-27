@@ -35,9 +35,7 @@ except ImportError:
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
-API_KEY = os.getenv(
-    "OPENALGO_API_KEY", "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d"
-)
+API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
 API_HOST = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
 WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
 
