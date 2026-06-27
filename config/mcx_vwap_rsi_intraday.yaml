@@ -1,0 +1,41 @@
+name: MCX VWAP RSI Intraday
+description: High-yield VWAP + RSI Pullback intraday trading strategy for MCX on NSE exchange.
+trading_styles:
+- intraday
+style_overrides:
+  intraday:
+    forced_exit_time: '15:15'
+    product_type: MIS
+    min_trades: 800
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: db
+  symbols:
+  - symbol: MCX
+    exchange: NSE
+  timeframes:
+  - 15m
+  start_date: '2023-03-16'
+  end_date: '2026-06-27'
+strategy:
+  indicators:
+    rsi:
+      period: 14
+    vwap:
+      enabled: true
+  parameters:
+    rsi_long_oversold: 40
+    rsi_short_overbought: 60
+    take_profit_pct: 1.5
+    stop_loss_pct: 2.0
+    allocation_factor: 2.0
+cost_model:
+  commission_pct: 0.03
+  slippage_pct: 0.015
+  min_commission: 20.0
+output:
+  storage: csv
+  base_dir: ./data/runs
+  export_dir: ./data/exports

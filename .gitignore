@@ -18,3 +18,16 @@ data/exports/
 .pytest_cache/
 .coverage
 htmlcov/
+*15m*.csv
+
+# Data cache, research parameters, and results
+results.tsv
+best_strategy.json
+best_equity_curve.png
+autoresearch/data/
+autoresearch/results.tsv
+autoresearch/metrics.json
+autoresearch/params.json
+autoresearch/best_equity_curve.png
+autoresearch/best_strategy.json
+data/cache_15m/

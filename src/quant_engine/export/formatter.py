@@ -129,6 +129,102 @@ import pandas as pd
 import numpy as np
 
 
+def _compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta).where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
+
+
+def _compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    high, low, close = df["high"], df["low"], df["close"]
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+
+
+def _compute_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> pd.Series:
+    atr = _compute_atr(df, period)
+    hl2 = (df["high"] + df["low"]) / 2
+    upper_band = hl2 + multiplier * atr
+    lower_band = hl2 - multiplier * atr
+
+    supertrend = pd.Series(np.nan, index=df.index)
+    direction = pd.Series(1, index=df.index)
+
+    for i in range(1, len(df)):
+        if df["close"].iloc[i] > upper_band.iloc[i - 1]:
+            direction.iloc[i] = 1
+        elif df["close"].iloc[i] < lower_band.iloc[i - 1]:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = direction.iloc[i - 1]
+
+        if direction.iloc[i] == 1:
+            supertrend.iloc[i] = lower_band.iloc[i]
+        else:
+            supertrend.iloc[i] = upper_band.iloc[i]
+
+    return supertrend
+
+
+def _compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    high, low, close = df["high"], df["low"], df["close"]
+    plus_dm = high.diff()
+    minus_dm = -low.diff()
+    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
+    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    plus_di = 100 * plus_dm.ewm(alpha=1/period, min_periods=period, adjust=False).mean() / atr
+    minus_di = 100 * minus_dm.ewm(alpha=1/period, min_periods=period, adjust=False).mean() / atr
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    return dx.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+
+
+def _compute_vwap(df: pd.DataFrame) -> pd.Series:
+    pv = df["close"] * df["volume"]
+    if isinstance(df.index, pd.DatetimeIndex):
+        date = df.index.date
+    elif "timestamp" in df.columns:
+        date = pd.to_datetime(df["timestamp"]).dt.date
+    else:
+        date = pd.Series(pd.Timestamp.now().date(), index=df.index)
+    cum_pv = pv.groupby(date).cumsum()
+    cum_vol = df["volume"].groupby(date).cumsum()
+    return cum_pv / cum_vol.replace(0, np.nan)
+
+
+def _compute_stoch_k(df: pd.DataFrame, k_period: int = 14, smooth_k: int = 3) -> pd.Series:
+    lowest_low = df["low"].rolling(k_period).min()
+    highest_high = df["high"].rolling(k_period).max()
+    stoch = 100 * (df["close"] - lowest_low) / (highest_high - lowest_low).replace(0, np.nan)
+    return stoch.rolling(smooth_k).mean()
+
+
+def _compute_stoch_d(df: pd.DataFrame, k_period: int = 14, smooth_k: int = 3, d_period: int = 3) -> pd.Series:
+    lowest_low = df["low"].rolling(k_period).min()
+    highest_high = df["high"].rolling(k_period).max()
+    stoch = 100 * (df["close"] - lowest_low) / (highest_high - lowest_low).replace(0, np.nan)
+    k = stoch.rolling(smooth_k).mean()
+    return k.rolling(d_period).mean()
+
+
+def _compute_cci(df: pd.DataFrame, period: int = 20) -> pd.Series:
+    tp = (df["high"] + df["low"] + df["close"]) / 3
+    sma = tp.rolling(period).mean()
+    mad = tp.rolling(period).apply(lambda x: np.abs(x - x.mean()).mean(), raw=True)
+    return (tp - sma) / (0.015 * mad).replace(0, np.nan)
+
+
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Compute all indicators needed for this strategy."""
 {indicators}
@@ -174,7 +270,7 @@ except ImportError:
     api = None
 
 # API Configuration - read from environment with sensible fallbacks
-API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
+API_KEY = os.getenv("OPENALGO_API_KEY", "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d")
 API_HOST = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
 WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
 
@@ -286,6 +382,34 @@ class StrategyBot:
             print(f"[WARNING] Error occurred during funds check: {{e}}. Proceeding anyway.")
             return True
 
+    def send_whatsapp_notification(self, action, status, price=0.0):
+        url = f"{{API_HOST}}/api/v1/whatsapp/notify"
+        api_key = os.getenv("WHATSAPP_API_KEY", API_KEY)
+
+        msg = f"[BOT] Strategy {strategy.id} {{action}} order {{status}} for {{SYMBOL}} on {{EXCHANGE}}. Qty: {{QUANTITY}}, Est. Price: {{price:.2f}} at {{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}}."
+
+        import json
+        from urllib.request import Request, urlopen
+
+        payload = {{
+            "apikey": api_key,
+            "self": True,
+            "message": msg
+        }}
+
+        try:
+            req = Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={{"Content-Type": "application/json"}},
+                method="POST"
+            )
+            with urlopen(req, timeout=5.0) as response:
+                response.read()
+            print("[BOT] WhatsApp notification sent successfully.")
+        except Exception as e:
+            print(f"[WARNING] WhatsApp notification failed: {{e}}")
+
     def place_entry_order(self):
         # CRITICAL: Verify funds before placing entry order
         if not self.check_funds_before_order():
@@ -310,8 +434,10 @@ class StrategyBot:
                 if quotes_resp and quotes_resp.get("status") == "success":
                     self.entry_price = float(quotes_resp.get("data", {{}}).get("last_price", 0.0))
             print(f"[BOT] Entry order successful at estimated price: {{self.entry_price}}")
+            self.send_whatsapp_notification("BUY", "success", self.entry_price)
         else:
             print(f"[BOT] Entry order failed: {{response}}")
+            self.send_whatsapp_notification("BUY", "failed", 0.0)
 
     def place_exit_order(self):
         print(f"[BOT] Placing exit SELL order for {{QUANTITY}} shares of {{SYMBOL}}...")
@@ -326,10 +452,17 @@ class StrategyBot:
         )
         if response.get("status") == "success":
             self.position = None
+            exit_price = self.ltp if self.ltp is not None else 0.0
+            if exit_price <= 0.0:
+                quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
+                if quotes_resp and quotes_resp.get("status") == "success":
+                    exit_price = float(quotes_resp.get("data", {{}}).get("last_price", 0.0))
             self.entry_price = 0.0
             print("[BOT] Exit order successful.")
+            self.send_whatsapp_notification("SELL", "success", exit_price)
         else:
             print(f"[BOT] Exit order failed: {{response}}")
+            self.send_whatsapp_notification("SELL", "failed", 0.0)
 
     def run(self):
         # Start the WebSocket thread
@@ -409,16 +542,80 @@ if __name__ == "__main__":
                 return f'df["{name}"] = df["close"].ewm(span={period}, adjust=False).mean()'
             else:
                 return f'df["{name}"] = df["close"].rolling({period}).apply(lambda x: np.dot(x, np.arange(1,{period}+1)) / np.arange(1,{period}+1).sum(), raw=True)'
+        elif node.indicator_type.value == "vwma":
+            period = int(params.get("period", 20))
+            return f'df["{name}"] = (df["close"] * df["volume"]).rolling({period}).sum() / df["volume"].rolling({period}).sum()'
         elif node.indicator_type.value == "rsi":
             period = int(params.get("period", 14))
             return f'df["{name}"] = _compute_rsi(df["close"], {period})'
+        elif node.indicator_type.value in ("macd", "macd_signal", "macd_hist"):
+            fast = int(params.get("fast_period", 12))
+            slow = int(params.get("slow_period", 26))
+            sig = int(params.get("signal_period", 9))
+            if node.indicator_type.value == "macd":
+                return f'df["{name}"] = df["close"].ewm(span={fast}, adjust=False).mean() - df["close"].ewm(span={slow}, adjust=False).mean()'
+            elif node.indicator_type.value == "macd_signal":
+                return f'df["{name}"] = (df["close"].ewm(span={fast}, adjust=False).mean() - df["close"].ewm(span={slow}, adjust=False).mean()).ewm(span={sig}, adjust=False).mean()'
+            else:
+                return f'df["{name}"] = (df["close"].ewm(span={fast}, adjust=False).mean() - df["close"].ewm(span={slow}, adjust=False).mean()) - (df["close"].ewm(span={fast}, adjust=False).mean() - df["close"].ewm(span={slow}, adjust=False).mean()).ewm(span={sig}, adjust=False).mean()'
+        elif node.indicator_type.value == "adx":
+            period = int(params.get("period", 14))
+            return f'df["{name}"] = _compute_adx(df, {period})'
         elif node.indicator_type.value == "atr":
             period = int(params.get("period", 14))
             return f'df["{name}"] = _compute_atr(df, {period})'
+        elif node.indicator_type.value in ("bbands_upper", "bbands_middle", "bbands_lower"):
+            period = int(params.get("period", 20))
+            std_dev = float(params.get("std_dev", 2.0))
+            if node.indicator_type.value == "bbands_middle":
+                return f'df["{name}"] = df["close"].rolling({period}).mean()'
+            elif node.indicator_type.value == "bbands_upper":
+                return f'df["{name}"] = df["close"].rolling({period}).mean() + {std_dev} * df["close"].rolling({period}).std()'
+            else:
+                return f'df["{name}"] = df["close"].rolling({period}).mean() - {std_dev} * df["close"].rolling({period}).std()'
+        elif node.indicator_type.value in ("keltner_upper", "keltner_lower"):
+            period = int(params.get("period", 20))
+            multiplier = float(params.get("multiplier", 2.0))
+            if node.indicator_type.value == "keltner_upper":
+                return f'df["{name}"] = df["close"].ewm(span={period}, adjust=False).mean() + {multiplier} * _compute_atr(df, {period})'
+            else:
+                return f'df["{name}"] = df["close"].ewm(span={period}, adjust=False).mean() - {multiplier} * _compute_atr(df, {period})'
+        elif node.indicator_type.value in ("donchian_upper", "donchian_lower"):
+            period = int(params.get("period", 20))
+            if node.indicator_type.value == "donchian_upper":
+                return f'df["{name}"] = df["high"].rolling({period}).max()'
+            else:
+                return f'df["{name}"] = df["low"].rolling({period}).min()'
         elif node.indicator_type.value == "supertrend":
             period = int(params.get("period", 10))
             multiplier = float(params.get("multiplier", 3.0))
             return f'df["{name}"] = _compute_supertrend(df, {period}, {multiplier})'
+        elif node.indicator_type.value in ("stoch_k", "stoch_d"):
+            k_period = int(params.get("k_period", 14))
+            smooth_k = int(params.get("smooth_k", 3))
+            if node.indicator_type.value == "stoch_k":
+                return f'df["{name}"] = _compute_stoch_k(df, {k_period}, {smooth_k})'
+            else:
+                d_period = int(params.get("d_period", 3))
+                return f'df["{name}"] = _compute_stoch_d(df, {k_period}, {smooth_k}, {d_period})'
+        elif node.indicator_type.value == "cci":
+            period = int(params.get("period", 20))
+            return f'df["{name}"] = _compute_cci(df, {period})'
+        elif node.indicator_type.value == "roc":
+            period = int(params.get("period", 12))
+            return f'df["{name}"] = (df["close"] - df["close"].shift({period})) / df["close"].shift({period}) * 100'
+        elif node.indicator_type.value == "momentum":
+            period = int(params.get("period", 10))
+            return f'df["{name}"] = df["close"] - df["close"].shift({period})'
+        elif node.indicator_type.value == "vwap":
+            return f'df["{name}"] = _compute_vwap(df)'
+        elif node.indicator_type.value == "obv":
+            return f'df["{name}"] = (np.sign(df["close"].diff()) * df["volume"]).fillna(0).cumsum()'
+        elif node.indicator_type.value == "volume_sma":
+            period = int(params.get("period", 20))
+            return f'df["{name}"] = df["volume"].rolling({period}).mean()'
+        elif node.indicator_type.value == "price":
+            return f'df["{name}"] = df["close"]'
         else:
             return f'df["{name}"] = df["close"]  # {node.indicator_type.value}({params})'
 

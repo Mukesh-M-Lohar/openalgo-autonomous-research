@@ -1,0 +1,50 @@
+{
+    "5m": {
+        "settings": {
+            "stop_loss_pct": 0.3,
+            "take_profit_pct": 0.6
+        },
+        "metrics": {
+            "total_trades": 47,
+            "long_trades": 34,
+            "short_trades": 13,
+            "win_rate_pct": 34.04255319148936,
+            "net_profit_pct": -6.144809125852888,
+            "max_drawdown_pct": 7.003289838024471,
+            "profit_factor": 0.41240035525748486,
+            "sharpe_ratio": -7.410383324499127
+        }
+    },
+    "15m": {
+        "settings": {
+            "stop_loss_pct": 0.8,
+            "take_profit_pct": 1.6
+        },
+        "metrics": {
+            "total_trades": 15,
+            "long_trades": 10,
+            "short_trades": 5,
+            "win_rate_pct": 33.33333333333333,
+            "net_profit_pct": -3.350744732426494,
+            "max_drawdown_pct": 4.290468268026095,
+            "profit_factor": 0.374926476519203,
+            "sharpe_ratio": -4.073558380942015
+        }
+    },
+    "1h": {
+        "settings": {
+            "stop_loss_pct": 0.3,
+            "take_profit_pct": 0.6
+        },
+        "metrics": {
+            "total_trades": 10,
+            "long_trades": 9,
+            "short_trades": 1,
+            "win_rate_pct": 20.0,
+            "net_profit_pct": -1.7427572184030868,
+            "max_drawdown_pct": 1.7427572184030868,
+            "profit_factor": 0.3635699737026655,
+            "sharpe_ratio": -4.163874896259901
+        }
+    }
+}
