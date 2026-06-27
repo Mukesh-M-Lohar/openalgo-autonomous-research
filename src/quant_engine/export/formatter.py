@@ -270,7 +270,7 @@ except ImportError:
     api = None
 
 # API Configuration - read from environment with sensible fallbacks
-API_KEY = os.getenv("OPENALGO_API_KEY", "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d")
+API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
 API_HOST = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
 WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
 
@@ -383,32 +383,36 @@ class StrategyBot:
             return True
 
     def send_whatsapp_notification(self, action, status, price=0.0):
-        url = f"{{API_HOST}}/api/v1/whatsapp/notify"
+        url = f"{API_HOST}/api/v1/whatsapp/notify"
         api_key = os.getenv("WHATSAPP_API_KEY", API_KEY)
 
-        msg = f"[BOT] Strategy {strategy.id} {{action}} order {{status}} for {{SYMBOL}} on {{EXCHANGE}}. Qty: {{QUANTITY}}, Est. Price: {{price:.2f}} at {{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}}."
+        msg = f"[BOT] Strategy {strategy.id} {action} order {status} for {SYMBOL} on {
+            EXCHANGE
+        }. Qty: {QUANTITY}, Est. Price: {price:.2f} at {
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }."
 
         import json
         from urllib.request import Request, urlopen
 
-        payload = {{
+        payload = {
             "apikey": api_key,
             "self": True,
             "message": msg
-        }}
+        }
 
         try:
             req = Request(
                 url,
                 data=json.dumps(payload).encode("utf-8"),
-                headers={{"Content-Type": "application/json"}},
+                headers={"Content-Type": "application/json"},
                 method="POST"
             )
             with urlopen(req, timeout=5.0) as response:
                 response.read()
             print("[BOT] WhatsApp notification sent successfully.")
         except Exception as e:
-            print(f"[WARNING] WhatsApp notification failed: {{e}}")
+            print(f"[WARNING] WhatsApp notification failed: {e}")
 
     def place_entry_order(self):
         # CRITICAL: Verify funds before placing entry order
