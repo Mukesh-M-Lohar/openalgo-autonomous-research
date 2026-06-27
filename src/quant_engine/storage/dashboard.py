@@ -172,7 +172,7 @@ def generate_html(run_data: list, output_path: Path):
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
+
     <style>
         :root {{
             --bg-base: #080b10;
@@ -183,16 +183,16 @@ def generate_html(run_data: list, output_path: Path):
             --text-primary: #f3f4f6;
             --text-secondary: #9ca3af;
             --text-muted: #6b7280;
-            
+
             --accent-primary: #06b6d4;      /* Cyan */
             --accent-glow: rgba(6, 182, 212, 0.15);
             --accent-primary-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
-            
+
             --success: #10b981;             /* Emerald */
             --warning: #f59e0b;             /* Amber */
             --danger: #ef4444;              /* Rose */
             --purple: #8b5cf6;              /* Violet */
-            
+
             --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
         }}
 
@@ -939,11 +939,11 @@ def generate_html(run_data: list, output_path: Path):
             </div>
             <div class="brand-subtitle">Autonomous Research Engine</div>
         </div>
-        
+
         <div class="run-list-container" id="run-list">
             <!-- Run items will be injected here -->
         </div>
-        
+
         <div class="sidebar-footer">
             Generated Local Time: 2026-06-27
         </div>
@@ -986,7 +986,7 @@ def generate_html(run_data: list, output_path: Path):
                         <!-- Funnel steps -->
                     </div>
                 </div>
-                
+
                 <div class="panel">
                     <div class="panel-title">Rejection Stage Breakdown</div>
                     <div class="chart-wrapper">
@@ -1002,7 +1002,7 @@ def generate_html(run_data: list, output_path: Path):
                 <!-- Left: Table -->
                 <div class="panel" style="padding: 24px;">
                     <div class="panel-title">Ranked Winners</div>
-                    
+
                     <div class="table-controls">
                         <div class="search-input-wrapper">
                             <input type="text" id="strategy-search" class="search-input" placeholder="Search by ID or style..." oninput="filterWinnersTable()">
@@ -1044,7 +1044,7 @@ def generate_html(run_data: list, output_path: Path):
                         <div class="empty-state-title">No Strategy Selected</div>
                         <p>Click on any row in the Winners table to view comprehensive metrics, walkforward scores, and parameter stability stats.</p>
                     </div>
-                    
+
                     <div id="detail-content" style="display: none;">
                         <!-- Detail contents injected here -->
                     </div>
@@ -1071,7 +1071,7 @@ def generate_html(run_data: list, output_path: Path):
                     </div>
                 </div>
             </div>
-            
+
             <div class="panel">
                 <div class="panel-title">Fast Rejection Diagnostics</div>
                 <p style="color: var(--text-secondary); font-size:0.88rem; margin-bottom: 20px; line-height:1.5;">
@@ -1107,7 +1107,7 @@ def generate_html(run_data: list, output_path: Path):
         let activeTab = 'overview';
         let currentSortColumn = 'rank';
         let currentSortAsc = true;
-        
+
         let rejectionChartInstance = null;
         let reasonsChartInstance = null;
 
@@ -1124,16 +1124,16 @@ def generate_html(run_data: list, output_path: Path):
         function renderRunList() {{
             const listEl = document.getElementById('run-list');
             listEl.innerHTML = '';
-            
+
             runs.forEach((run, index) => {{
                 const item = document.createElement('div');
                 item.className = `run-item ${{index === activeRunIndex ? 'active' : ''}}`;
                 item.onclick = () => selectRun(index);
-                
+
                 const hasWinners = run.stats.winners > 0;
                 const badgeText = hasWinners ? `${{run.stats.winners}} Winners` : '0 Winners';
                 const badgeClass = hasWinners ? 'badge-winners' : 'badge-zero';
-                
+
                 item.innerHTML = `
                     <div class="run-item-name">${{run.name}}</div>
                     <div class="run-item-meta">
@@ -1159,7 +1159,7 @@ def generate_html(run_data: list, output_path: Path):
             // Render active run info
             document.getElementById('active-run-name').textContent = run.name;
             document.getElementById('active-run-desc').textContent = run.description || 'No description provided.';
-            
+
             // Header meta tags
             const metaEl = document.getElementById('active-run-meta');
             metaEl.innerHTML = `
@@ -1179,7 +1179,7 @@ def generate_html(run_data: list, output_path: Path):
 
         function switchTab(tabId) {{
             activeTab = tabId;
-            
+
             // Toggle active button
             const buttons = document.querySelectorAll('.tab-btn');
             buttons.forEach(btn => {{
@@ -1215,13 +1215,13 @@ def generate_html(run_data: list, output_path: Path):
         function renderOverviewTab(run) {{
             // 1. Stats Grid
             const statsGrid = document.getElementById('overview-stats-grid');
-            
-            const fastRejectPct = run.stats.generated > 0 
-                ? ((run.stats.fast_rejections / run.stats.generated) * 100).toFixed(1) 
+
+            const fastRejectPct = run.stats.generated > 0
+                ? ((run.stats.fast_rejections / run.stats.generated) * 100).toFixed(1)
                 : '0.0';
-            
-            const conversionPct = run.stats.generated > 0 
-                ? ((run.stats.winners / run.stats.generated) * 100).toFixed(2) 
+
+            const conversionPct = run.stats.generated > 0
+                ? ((run.stats.winners / run.stats.generated) * 100).toFixed(2)
                 : '0.00';
 
             statsGrid.innerHTML = `
@@ -1252,7 +1252,7 @@ def generate_html(run_data: list, output_path: Path):
             const total = run.stats.generated || 1;
             const fastPassed = total - run.stats.fast_rejections;
             const btPassed = run.stats.backtested - run.stats.backtest_rejections;
-            
+
             funnel.innerHTML = `
                 <div class="funnel-step">
                     <div class="funnel-step-info">
@@ -1307,8 +1307,8 @@ def generate_html(run_data: list, output_path: Path):
                         labels: ['Survived', 'Fast Rejected', 'Backtest Filtered', 'Validation Rejected'],
                         datasets: [{{
                             data: [
-                                run.stats.winners, 
-                                run.stats.fast_rejections, 
+                                run.stats.winners,
+                                run.stats.fast_rejections,
                                 run.stats.backtest_rejections,
                                 run.stats.validation_rejections
                             ],
@@ -1356,7 +1356,7 @@ def generate_html(run_data: list, output_path: Path):
                 const tr = document.createElement('tr');
                 tr.id = `strat-row-${{w.strategy_id}}`;
                 tr.onclick = () => selectStrategy(w.strategy_id);
-                
+
                 const cagrVal = w.backtest.cagr;
                 const sharpeVal = w.backtest.sharpe;
                 const ddVal = w.backtest.max_drawdown_pct;
@@ -1415,7 +1415,7 @@ def generate_html(run_data: list, output_path: Path):
                 'win_rate': 6,
                 'composite_score': 7
             }};
-            
+
             ths.forEach((th, index) => {{
                 th.className = '';
                 if (index === colMap[column]) {{
@@ -1425,7 +1425,7 @@ def generate_html(run_data: list, output_path: Path):
 
             const sorted = [...run.winners].sort((a, b) => {{
                 let valA, valB;
-                
+
                 if (column === 'rank' || column === 'strategy_id' || column === 'category' || column === 'composite_score') {{
                     valA = a[column];
                     valB = b[column];
@@ -1585,7 +1585,7 @@ def generate_html(run_data: list, output_path: Path):
                         <div>
                             <span style="font-weight: 700; color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase;">Exit & Risk Parameters:</span>
                             <div style="font-family: monospace; font-size: 0.85rem; padding: 8px; background-color: var(--bg-base); border-radius: 4px; margin-top: 4px; color: var(--text-primary); border-left: 3px solid var(--text-muted);">
-                                ${{w.signal_logic && w.signal_logic.exit_long ? 
+                                ${{w.signal_logic && w.signal_logic.exit_long ?
                                     `Stop Loss: ${{w.signal_logic.exit_long.stop_loss_pct ? w.signal_logic.exit_long.stop_loss_pct + '%' : 'None'}} | ` +
                                     `Take Profit: ${{w.signal_logic.exit_long.take_profit_pct ? w.signal_logic.exit_long.take_profit_pct + '%' : 'None'}} | ` +
                                     `Trailing Stop: ${{w.signal_logic.exit_long.trailing_stop_pct ? w.signal_logic.exit_long.trailing_stop_pct + '%' : 'None'}} | ` +
@@ -1601,9 +1601,9 @@ def generate_html(run_data: list, output_path: Path):
             // 1. Stage progress bar lists
             const stageProgress = document.getElementById('rejection-stage-progress');
             stageProgress.innerHTML = '';
-            
+
             const totalRejections = run.stats.rejected || 1;
-            
+
             const stages = [
                 {{ name: 'Fast Rejection (Indicator checks)', count: run.stats.fast_rejections }},
                 {{ name: 'Backtest Filter (Metrics thresholds)', count: run.stats.backtest_rejections }},
@@ -1612,7 +1612,7 @@ def generate_html(run_data: list, output_path: Path):
 
             stages.forEach(st => {{
                 const pct = ((st.count / totalRejections) * 100).toFixed(1);
-                
+
                 const item = document.createElement('div');
                 item.className = 'rejection-progress-item';
                 item.innerHTML = `
@@ -1630,7 +1630,7 @@ def generate_html(run_data: list, output_path: Path):
             // 2. Reason progress list
             const reasonProgress = document.getElementById('rejection-reason-progress');
             reasonProgress.innerHTML = '';
-            
+
             const sortedReasons = Object.entries(run.rejections.reasons)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 5);
@@ -1641,7 +1641,7 @@ def generate_html(run_data: list, output_path: Path):
                 sortedReasons.forEach(([reason, count]) => {{
                     const pct = ((count / totalRejections) * 100).toFixed(1);
                     const readableReason = reason.replace(/_/g, ' ');
-                    
+
                     const item = document.createElement('div');
                     item.className = 'rejection-progress-item';
                     item.innerHTML = `
@@ -1661,7 +1661,7 @@ def generate_html(run_data: list, output_path: Path):
             setTimeout(() => {{
                 const ctx = document.getElementById('rejectionReasonsChart').getContext('2d');
                 if (reasonsChartInstance) reasonsChartInstance.destroy();
-                
+
                 const labels = Object.keys(run.rejections.reasons).map(lbl => lbl.replace(/_/g, ' '));
                 const data = Object.values(run.rejections.reasons);
 
@@ -1703,10 +1703,10 @@ def generate_html(run_data: list, output_path: Path):
 
         function renderConfigTab(run) {{
             const codeBlock = document.getElementById('config-code-block');
-            
+
             // Format config to clean yaml-like text manually
             let yamlStr = '';
-            
+
             function printObj(obj, indent = 0) {{
                 const pad = ' '.repeat(indent);
                 for (let key in obj) {{
