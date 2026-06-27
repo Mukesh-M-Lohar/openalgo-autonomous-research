@@ -1,0 +1,89 @@
+name: Sector IT Momentum Intraday
+description: Intraday momentum strategy for high beta IT sector stocks
+trading_styles:
+- intraday
+style_overrides:
+  intraday:
+    max_hold_bars: 75
+    forced_exit_time: '15:15'
+    product_type: MIS
+    min_trades: 150
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: db
+  symbols:
+  - symbol: TCS
+    exchange: NSE
+  - symbol: INFOSYS
+    exchange: NSE
+  - symbol: WIPRO
+    exchange: NSE
+  - symbol: HCLTECH
+    exchange: NSE
+  - symbol: TECHM
+    exchange: NSE
+  timeframes:
+  - 15m
+  start_date: '2021-01-01'
+  end_date: '2026-06-01'
+  train_pct: 0.7
+  validation_pct: 0.15
+  test_pct: 0.15
+generation:
+  mode: guided
+  target_count: 30000
+  max_conditions_per_entry: 3
+  allow_short: true
+  indicator_categories:
+  - momentum
+  - trend
+  multi_timeframe: false
+filters:
+  fast_reject:
+    max_complexity: 4
+    min_indicators: 1
+  backtest:
+    min_trades: 150
+    min_sharpe: 1.0
+    max_drawdown: 0.15
+    min_profit_factor: 1.3
+    min_win_rate: 0.38
+    min_cagr: 0.12
+  validation:
+    max_oos_sharpe_decay: 0.35
+    min_walk_forward_consistency: 0.6
+    monte_carlo_confidence: 0.95
+    param_stability_tolerance: 0.2
+evolution:
+  enabled: true
+  generations: 5
+  population_size: 250
+  mutation_rate: 0.3
+  crossover_rate: 0.5
+  elitism_pct: 0.1
+  tournament_size: 4
+ranking:
+  mode: weighted
+  objectives:
+  - metric: sharpe
+    weight: 0.4
+    direction: maximize
+  - metric: profit_factor
+    weight: 0.3
+    direction: maximize
+  - metric: max_drawdown_pct
+    weight: 0.3
+    direction: minimize
+  export_top_n: 15
+  export_per_category: 3
+cost_model:
+  commission_pct: 0.03
+  slippage_pct: 0.02
+  min_commission: 20.0
+output:
+  storage: csv
+  base_dir: ./data/runs
+  export_dir: ./data/exports
+  save_all_candidates: true

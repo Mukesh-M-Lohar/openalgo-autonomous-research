@@ -1,0 +1,98 @@
+name: Heavyweight Hybrid Intraday Swing
+description: Multi-style intraday and swing strategy search on RELIANCE and HDFCBANK
+trading_styles:
+- intraday
+- swing
+style_overrides:
+  intraday:
+    max_hold_bars: 75
+    forced_exit_time: '15:15'
+    product_type: MIS
+    min_trades: 100
+  swing:
+    min_hold_bars: 10
+    max_hold_bars: 360
+    product_type: CNC
+    min_trades: 30
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: db
+  symbols:
+  - symbol: RELIANCE
+    exchange: NSE
+  - symbol: HDFCBANK
+    exchange: NSE
+  timeframes:
+  - 15m
+  - 1h
+  start_date: '2021-01-01'
+  end_date: '2026-06-01'
+  train_pct: 0.7
+  validation_pct: 0.15
+  test_pct: 0.15
+generation:
+  mode: guided
+  target_count: 40000
+  max_conditions_per_entry: 4
+  allow_short: true
+  indicator_categories:
+  - trend
+  - momentum
+  - volatility
+  - volume
+  multi_timeframe: true
+filters:
+  fast_reject:
+    max_complexity: 5
+    min_indicators: 1
+  backtest:
+    min_trades: 50
+    min_sharpe: 1.1
+    max_drawdown: 0.2
+    min_profit_factor: 1.35
+    min_win_rate: 0.4
+    min_cagr: 0.15
+  validation:
+    max_oos_sharpe_decay: 0.35
+    min_walk_forward_consistency: 0.65
+    monte_carlo_confidence: 0.95
+    param_stability_tolerance: 0.2
+evolution:
+  enabled: true
+  generations: 5
+  population_size: 300
+  mutation_rate: 0.3
+  crossover_rate: 0.5
+  elitism_pct: 0.1
+  tournament_size: 4
+ranking:
+  mode: robustness_first
+  objectives:
+  - metric: sharpe
+    weight: 0.3
+    direction: maximize
+  - metric: sortino
+    weight: 0.2
+    direction: maximize
+  - metric: max_drawdown_pct
+    weight: 0.2
+    direction: minimize
+  - metric: profit_factor
+    weight: 0.15
+    direction: maximize
+  - metric: cagr
+    weight: 0.15
+    direction: maximize
+  export_top_n: 20
+  export_per_category: 4
+cost_model:
+  commission_pct: 0.06
+  slippage_pct: 0.02
+  min_commission: 10.0
+output:
+  storage: csv
+  base_dir: ./data/runs
+  export_dir: ./data/exports
+  save_all_candidates: true

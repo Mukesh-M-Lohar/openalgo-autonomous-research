@@ -131,6 +131,8 @@ class RankedStrategy:
     rank: int = 0
     category: str = ""
     pareto_front: int = 0
+    genome: dict | None = None
+    signal_logic: dict | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -141,4 +143,6 @@ class RankedStrategy:
             "rank": self.rank,
             "category": self.category,
             "pareto_front": self.pareto_front,
+            "genome": self.genome,
+            "signal_logic": self.signal_logic,
         }

@@ -86,6 +86,7 @@ check-build: ## Verify package builds correctly
 
 docs: ## Build documentation site (requires mkdocs)
 	pip install mkdocs mkdocs-material -q
+	$(PYTHON) scripts/generate_dashboard.py
 	mkdocs build
 
 docs-serve: ## Serve docs locally with hot reload

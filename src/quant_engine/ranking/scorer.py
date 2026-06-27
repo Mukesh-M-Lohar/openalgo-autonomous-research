@@ -51,6 +51,8 @@ class RankingEngine:
                     backtest=bt,
                     validation=val or ValidationResult(strategy_id=item["strategy_id"]),
                     composite_score=score,
+                    genome=item.get("genome"),
+                    signal_logic=item.get("signal_logic"),
                 )
             )
 

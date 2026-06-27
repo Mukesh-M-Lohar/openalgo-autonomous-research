@@ -124,6 +124,17 @@ class TestIndicators:
         assert (valid >= 0).all()
         assert (valid <= 100).all()
 
+    def test_supertrend_computation(self, sample_df):
+        result = compute_indicator(
+            sample_df,
+            IndicatorType.SUPERTREND,
+            {"period": 10, "multiplier": 3.0},
+            PriceSource.CLOSE,
+        )
+        assert len(result) == len(sample_df)
+        # Verify it computes correctly and has some valid values after period + 1
+        assert not result.iloc[12:].isna().any()
+
 
 class TestPatterns:
     def test_all_patterns_registered(self):

@@ -122,6 +122,14 @@ class PipelineOrchestrator:
             self._progress.status = "completed"
             logger.info(f"Research run {run_id} completed successfully")
 
+            # Generate/update dashboards automatically
+            try:
+                from quant_engine.storage.dashboard import generate_all_dashboards
+
+                generate_all_dashboards(self._storage._base)
+            except Exception as de:
+                logger.error(f"Failed to generate dashboard: {de}", exc_info=True)
+
         except Exception as e:
             logger.error(f"Pipeline failed: {e}", exc_info=True)
             self._progress.status = "failed"
@@ -420,6 +428,10 @@ class PipelineOrchestrator:
         logger.info("Stage 10: Ranking and exporting...")
         ranking_engine = RankingEngine(self._config.ranking)
 
+        from quant_engine.export.formatter import StrategyExporter
+
+        exporter = StrategyExporter()
+
         strategies_data = []
         for s in survivors:
             bt = backtest_results.get(s.id)
@@ -439,6 +451,8 @@ class PipelineOrchestrator:
                     "strategy_id": s.id,
                     "backtest": bt,
                     "validation": val,
+                    "genome": s.to_dict(),
+                    "signal_logic": exporter._describe_logic(s),
                 }
             )
 

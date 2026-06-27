@@ -1,0 +1,93 @@
+name: Defensive Pharma FMCG Swing
+description: Low drawdown swing trading systems in defensive sectors (Pharma & FMCG)
+trading_styles:
+- swing
+style_overrides:
+  swing:
+    min_hold_bars: 10
+    max_hold_bars: 360
+    product_type: CNC
+    min_trades: 30
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: db
+  symbols:
+  - symbol: SUNPHARMA
+    exchange: NSE
+  - symbol: CIPLA
+    exchange: NSE
+  - symbol: DRREDDY
+    exchange: NSE
+  - symbol: HINDUNILVR
+    exchange: NSE
+  - symbol: ITC
+    exchange: NSE
+  timeframes:
+  - 1d
+  start_date: '2021-01-01'
+  end_date: '2026-06-01'
+  train_pct: 0.7
+  validation_pct: 0.15
+  test_pct: 0.15
+generation:
+  mode: random
+  target_count: 30000
+  max_conditions_per_entry: 3
+  allow_short: false
+  indicator_categories:
+  - trend
+  - momentum
+  - volatility
+  multi_timeframe: false
+filters:
+  fast_reject:
+    max_complexity: 4
+    min_indicators: 1
+  backtest:
+    min_trades: 30
+    min_sharpe: 1.2
+    max_drawdown: 0.12
+    min_profit_factor: 1.4
+    min_win_rate: 0.48
+    min_cagr: 0.12
+  validation:
+    max_oos_sharpe_decay: 0.25
+    min_walk_forward_consistency: 0.75
+    monte_carlo_confidence: 0.95
+    param_stability_tolerance: 0.15
+evolution:
+  enabled: true
+  generations: 5
+  population_size: 250
+  mutation_rate: 0.25
+  crossover_rate: 0.5
+  elitism_pct: 0.15
+  tournament_size: 3
+ranking:
+  mode: robustness_first
+  objectives:
+  - metric: sharpe
+    weight: 0.4
+    direction: maximize
+  - metric: max_drawdown_pct
+    weight: 0.3
+    direction: minimize
+  - metric: sortino
+    weight: 0.2
+    direction: maximize
+  - metric: profit_factor
+    weight: 0.1
+    direction: maximize
+  export_top_n: 15
+  export_per_category: 3
+cost_model:
+  commission_pct: 0.12
+  slippage_pct: 0.02
+  min_commission: 0.0
+output:
+  storage: csv
+  base_dir: ./data/runs
+  export_dir: ./data/exports
+  save_all_candidates: true

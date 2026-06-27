@@ -76,6 +76,27 @@ def test_williams_r(self, sample_df):
 make test-generation
 ```
 
+### 8. Add Export Support
+
+To ensure the indicator is correctly translated into Python when exporting a strategy to a standalone signal script:
+
+1. Update the translation map in [formatter.py](file:///root/openalgo-autonomous-research/src/quant_engine/export/formatter.py) inside the `_indicator_to_python` method:
+
+```python
+        elif node.indicator_type.value == "williams_r":
+            period = int(params.get("period", 14))
+            return f'df["{name}"] = _compute_williams_r(df, {period})'
+```
+
+2. Add the corresponding helper function definition (e.g., `_compute_williams_r`) inside the Jinja template at [signal_strategy.py.j2](file:///root/openalgo-autonomous-research/src/quant_engine/export/templates/signal_strategy.py.j2) so it is packaged with the exported code:
+
+```python
+def _compute_williams_r(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    high_max = df["high"].rolling(period).max()
+    low_min = df["low"].rolling(period).min()
+    return -100 * (high_max - df["close"]) / (high_max - low_min).replace(0, np.nan)
+```
+
 ## Multi-Output Indicators
 
 For indicators with multiple outputs (e.g., Bollinger Bands), create separate enum values:
