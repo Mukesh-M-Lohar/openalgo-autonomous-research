@@ -204,6 +204,10 @@ if __name__ == "__main__":
         elif node.indicator_type.value == "atr":
             period = int(params.get("period", 14))
             return f'df["{name}"] = _compute_atr(df, {period})'
+        elif node.indicator_type.value == "supertrend":
+            period = int(params.get("period", 10))
+            multiplier = float(params.get("multiplier", 3.0))
+            return f'df["{name}"] = _compute_supertrend(df, {period}, {multiplier})'
         else:
             return f'df["{name}"] = df["close"]  # {node.indicator_type.value}({params})'
 

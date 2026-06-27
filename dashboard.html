@@ -1,0 +1,1592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAlgo Quant Research Engine - Dashboard</title>
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        :root {
+            --bg-base: #080b10;
+            --bg-surface: rgba(17, 24, 39, 0.7);
+            --bg-surface-opaque: #0f1622;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+
+            --accent-primary: #06b6d4;      /* Cyan */
+            --accent-glow: rgba(6, 182, 212, 0.15);
+            --accent-primary-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
+
+            --success: #10b981;             /* Emerald */
+            --warning: #f59e0b;             /* Amber */
+            --danger: #ef4444;              /* Rose */
+            --purple: #8b5cf6;              /* Violet */
+
+            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* App Layout */
+        .sidebar {
+            width: 320px;
+            background-color: #0c0f16;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            flex-shrink: 0;
+        }
+
+        .main-content {
+            flex-grow: 1;
+            height: 100vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            background: radial-gradient(circle at top right, rgba(6, 182, 212, 0.05), transparent 600px),
+                        radial-gradient(circle at bottom left, rgba(139, 92, 246, 0.03), transparent 600px);
+        }
+
+        /* Sidebar Styling */
+        .sidebar-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .brand-title {
+            font-size: 1.1rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            background: linear-gradient(135deg, #fff 30%, var(--accent-primary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .brand-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .run-list-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .run-item {
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .run-item:hover {
+            background-color: rgba(255, 255, 255, 0.04);
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+        }
+
+        .run-item.active {
+            background: rgba(6, 182, 212, 0.06);
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.1);
+        }
+
+        .run-item-name {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .run-item-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .run-item-id {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-muted);
+        }
+
+        .badge {
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge-winners {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .badge-zero {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .sidebar-footer {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        /* Main Content Header */
+        .content-header {
+            padding: 32px 40px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .header-title-area h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .header-title-area p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 6px;
+            max-width: 600px;
+        }
+
+        .header-meta {
+            display: flex;
+            gap: 16px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .meta-tag {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background-color: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .meta-tag strong {
+            color: #fff;
+        }
+
+        /* Tab Navigation */
+        .tab-nav {
+            display: flex;
+            gap: 24px;
+            padding: 0 40px;
+            border-bottom: 1px solid var(--border-color);
+            background-color: rgba(12, 15, 22, 0.3);
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            padding: 16px 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            position: relative;
+            transition: color 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: #fff;
+        }
+
+        .tab-btn.active {
+            color: var(--accent-primary);
+        }
+
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: var(--accent-primary);
+            box-shadow: 0 0 8px var(--accent-primary);
+        }
+
+        /* Content Sections */
+        .tab-content {
+            display: none;
+            padding: 40px;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Grid System */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 24px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: var(--bg-surface);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--card-shadow);
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--card-color, var(--accent-primary-gradient));
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #fff;
+            line-height: 1.1;
+        }
+
+        .stat-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Section Layouts */
+        .section-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 32px;
+            margin-bottom: 42px;
+        }
+
+        @media (max-width: 1024px) {
+            .section-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: var(--bg-surface);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: var(--card-shadow);
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            color: #fff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Funnel Diagram */
+        .funnel-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 10px 0;
+        }
+
+        .funnel-step {
+            display: flex;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px 20px;
+            position: relative;
+        }
+
+        .funnel-step::after {
+            content: '↓';
+            position: absolute;
+            bottom: -22px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.2rem;
+            color: var(--text-muted);
+            font-weight: bold;
+        }
+
+        .funnel-step:last-child::after {
+            display: none;
+        }
+
+        .funnel-step-info {
+            flex-grow: 1;
+        }
+
+        .funnel-step-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .funnel-step-sub {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .funnel-step-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #fff;
+            text-align: right;
+        }
+
+        .funnel-step-pct {
+            font-size: 0.75rem;
+            font-weight: 600;
+            background-color: rgba(255, 255, 255, 0.05);
+            padding: 4px 8px;
+            border-radius: 6px;
+            color: var(--accent-primary);
+            margin-left: 12px;
+        }
+
+        /* Chart Canvas wrapper */
+        .chart-wrapper {
+            height: 280px;
+            position: relative;
+        }
+
+        /* Table Styling */
+        .table-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .search-input-wrapper {
+            position: relative;
+            flex-grow: 1;
+            max-width: 400px;
+        }
+
+        .search-input {
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 16px;
+            color: #fff;
+            font-size: 0.9rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent-primary);
+            background-color: rgba(255, 255, 255, 0.05);
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.1);
+        }
+
+        .filter-select {
+            background-color: var(--bg-surface-opaque);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 16px;
+            color: #fff;
+            font-size: 0.9rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .filter-select:focus {
+            border-color: var(--accent-primary);
+        }
+
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        .dashboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.88rem;
+        }
+
+        .dashboard-table th {
+            background-color: rgba(12, 15, 22, 0.6);
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .dashboard-table th:hover {
+            color: #fff;
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .dashboard-table th.sort-asc::after {
+            content: ' ▲';
+            font-size: 0.7rem;
+            color: var(--accent-primary);
+        }
+
+        .dashboard-table th.sort-desc::after {
+            content: ' ▼';
+            font-size: 0.7rem;
+            color: var(--accent-primary);
+        }
+
+        .dashboard-table td {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .dashboard-table tbody tr {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .dashboard-table tbody tr:hover {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .dashboard-table tbody tr.selected {
+            background-color: rgba(6, 182, 212, 0.05);
+            border-left: 2px solid var(--accent-primary);
+        }
+
+        .strategy-id-cell {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--accent-primary);
+        }
+
+        .winner-cat-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            background-color: rgba(139, 92, 246, 0.1);
+            color: #a78bfa;
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            margin-right: 4px;
+            margin-bottom: 4px;
+        }
+
+        .metric-up {
+            color: var(--success);
+            font-weight: 500;
+        }
+
+        .metric-down {
+            color: var(--danger);
+            font-weight: 500;
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 40px;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+
+        .empty-state-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        /* Strategy Details View */
+        .detail-header-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 24px;
+        }
+
+        .detail-title-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--accent-primary);
+        }
+
+        .metric-grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        @media (max-width: 768px) {
+            .metric-grid-3 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .metric-item-box {
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .metric-item-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .metric-item-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .metric-item-sub {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .detail-sub-section {
+            margin-bottom: 32px;
+        }
+
+        .detail-sub-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+
+        .metrics-list-table {
+            width: 100%;
+            font-size: 0.85rem;
+            border-collapse: collapse;
+        }
+
+        .metrics-list-table tr:nth-child(even) {
+            background-color: rgba(255, 255, 255, 0.01);
+        }
+
+        .metrics-list-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .metrics-list-table td.m-label {
+            color: var(--text-secondary);
+            font-weight: 500;
+            width: 60%;
+        }
+
+        .metrics-list-table td.m-value {
+            text-align: right;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        /* Configuration Details tab */
+        .config-code-block {
+            background-color: #05070a;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: #38bdf8;
+        }
+
+        /* Rejections View */
+        .rejections-summary-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 32px;
+            margin-bottom: 32px;
+        }
+
+        @media (max-width: 768px) {
+            .rejections-summary-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .rejection-progress-bar-container {
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .rejection-progress-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .rejection-progress-lbl {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .rejection-progress-lbl span.name {
+            color: var(--text-primary);
+        }
+
+        .rejection-progress-lbl span.val {
+            color: var(--text-secondary);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .rejection-track-bar {
+            height: 8px;
+            background-color: rgba(255, 255, 255, 0.03);
+            border-radius: 4px;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .rejection-fill-bar {
+            height: 100%;
+            background-color: var(--danger);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <div class="brand-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-top:-2px"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                OpenAlgo Quant
+            </div>
+            <div class="brand-subtitle">Autonomous Research Engine</div>
+        </div>
+
+        <div class="run-list-container" id="run-list">
+            <!-- Run items will be injected here -->
+        </div>
+
+        <div class="sidebar-footer">
+            Generated Local Time: 2026-06-27
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-content">
+        <!-- Content Header -->
+        <div class="content-header">
+            <div class="header-title-area">
+                <h1 id="active-run-name">Loading Run...</h1>
+                <p id="active-run-desc">Please select a research run from the sidebar.</p>
+                <div class="header-meta" id="active-run-meta">
+                    <!-- Meta tags will be injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="tab-nav">
+            <button class="tab-btn active" onclick="switchTab('overview')">Overview</button>
+            <button class="tab-btn" onclick="switchTab('winners')">Winning Strategies</button>
+            <button class="tab-btn" onclick="switchTab('rejections')">Rejection Analysis</button>
+            <button class="tab-btn" onclick="switchTab('config')">Run Configuration</button>
+        </div>
+
+        <!-- Tab contents -->
+        <!-- OVERVIEW TAB -->
+        <div id="tab-overview" class="tab-content active">
+            <!-- Stats Row -->
+            <div class="stats-grid" id="overview-stats-grid">
+                <!-- Injected Stats -->
+            </div>
+
+            <!-- Funnel & Rejection Panel -->
+            <div class="section-row">
+                <div class="panel">
+                    <div class="panel-title">System Discovery Funnel</div>
+                    <div class="funnel-container" id="discovery-funnel">
+                        <!-- Funnel steps -->
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-title">Rejection Stage Breakdown</div>
+                    <div class="chart-wrapper">
+                        <canvas id="rejectionStageChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- WINNERS TAB -->
+        <div id="tab-winners" class="tab-content">
+            <div class="section-row" style="grid-template-columns: 3fr 2fr;">
+                <!-- Left: Table -->
+                <div class="panel" style="padding: 24px;">
+                    <div class="panel-title">Ranked Winners</div>
+
+                    <div class="table-controls">
+                        <div class="search-input-wrapper">
+                            <input type="text" id="strategy-search" class="search-input" placeholder="Search by ID or style..." oninput="filterWinnersTable()">
+                        </div>
+                        <select id="style-filter" class="filter-select" onchange="filterWinnersTable()">
+                            <option value="all">All Trading Styles</option>
+                            <option value="swing">Swing</option>
+                            <option value="intraday">Intraday</option>
+                            <option value="positional">Positional</option>
+                            <option value="btst">BTST</option>
+                        </select>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="dashboard-table" id="winners-table">
+                            <thead>
+                                <tr>
+                                    <th onclick="sortTable('rank')">Rank</th>
+                                    <th onclick="sortTable('strategy_id')">Strategy ID</th>
+                                    <th onclick="sortTable('category')">Style</th>
+                                    <th onclick="sortTable('cagr')">CAGR</th>
+                                    <th onclick="sortTable('sharpe')">Sharpe</th>
+                                    <th onclick="sortTable('max_drawdown_pct')">Max DD %</th>
+                                    <th onclick="sortTable('win_rate')">Win Rate</th>
+                                    <th onclick="sortTable('composite_score')">Score</th>
+                                </tr>
+                            </thead>
+                            <tbody id="winners-table-body">
+                                <!-- Injected rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Right: Selection Detail -->
+                <div class="panel" id="strategy-detail-panel">
+                    <div class="empty-state" id="detail-empty-state">
+                        <div class="empty-state-icon">🔍</div>
+                        <div class="empty-state-title">No Strategy Selected</div>
+                        <p>Click on any row in the Winners table to view comprehensive metrics, walkforward scores, and parameter stability stats.</p>
+                    </div>
+
+                    <div id="detail-content" style="display: none;">
+                        <!-- Detail contents injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- REJECTIONS TAB -->
+        <div id="tab-rejections" class="tab-content">
+            <div class="panel" style="margin-bottom: 32px;">
+                <div class="panel-title">Rejection Breakdown</div>
+                <div class="rejections-summary-layout">
+                    <div>
+                        <h4 style="color:#fff; margin-bottom: 12px; font-size:0.95rem;">Killed by Stage</h4>
+                        <div class="rejection-progress-bar-container" id="rejection-stage-progress">
+                            <!-- Injected -->
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="color:#fff; margin-bottom: 12px; font-size:0.95rem;">Top Rejection Reasons</h4>
+                        <div class="rejection-progress-bar-container" id="rejection-reason-progress">
+                            <!-- Injected -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-title">Fast Rejection Diagnostics</div>
+                <p style="color: var(--text-secondary); font-size:0.88rem; margin-bottom: 20px; line-height:1.5;">
+                    The OpenAlgo Quant engine applies a highly efficient multi-stage pipeline. The first stage is <strong>Fast Reject</strong> which eliminates mathematically contradictory or duplicate indicator conditions (e.g., trying to buy if RSI &gt; 70 and RSI &lt; 30 simultaneously) in less than a millisecond, before running the expensive multi-core backtester. This saves massive CPU resources.
+                </p>
+                <div class="chart-wrapper" style="height: 320px;">
+                    <canvas id="rejectionReasonsChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONFIG TAB -->
+        <div id="tab-config" class="tab-content">
+            <div class="panel">
+                <div class="panel-title">Run Configuration Details</div>
+                <pre class="config-code-block" id="config-code-block">
+                    <!-- Config yaml injected here -->
+                </pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Injection -->
+    <script id="runs-database" type="application/json">
+        [{"run_id": "run_02f6b23b", "name": "Default Research", "description": "Default configuration for quick testing", "symbols": ["SBIN"], "timeframes": ["15m", "1h"], "start_date": "2026-01-01", "end_date": "2026-06-25", "config": {"cost_model": {"commission_pct": 0.03, "min_commission": 20.0, "slippage_pct": 0.02}, "data": {"end_date": "2026-06-25", "openalgo": {"api_key": "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d", "host": "http://127.0.0.1:5000", "source": "db"}, "start_date": "2026-01-01", "symbols": [{"exchange": "NSE", "symbol": "SBIN"}], "test_pct": 0.15, "timeframes": ["15m", "1h"], "train_pct": 0.7, "validation_pct": 0.15}, "description": "Default configuration for quick testing", "evolution": {"crossover_rate": 0.5, "elitism_pct": 0.1, "enabled": true, "generations": 3, "mutation_rate": 0.3, "population_size": 100, "tournament_size": 3}, "execution": {"chunk_size": 100, "max_workers": null, "memory_limit_gb": 8.0}, "filters": {"backtest": {"max_drawdown": 0.3, "min_cagr": 0.0, "min_profit_factor": 1.2, "min_sharpe": 0.8, "min_trades": 20, "min_win_rate": 0.0}, "fast_reject": {"max_complexity": 4, "min_indicators": 1}, "validation": {"max_oos_sharpe_decay": 0.4, "min_walk_forward_consistency": 0.6, "monte_carlo_confidence": 0.95, "param_stability_tolerance": 0.25}}, "generation": {"allow_short": false, "indicator_categories": ["trend", "momentum", "volume", "volatility"], "max_conditions_per_entry": 3, "mode": "random", "multi_timeframe": false, "target_count": 1000}, "name": "Default Research", "output": {"base_dir": "./data/runs", "export_dir": "./data/exports", "save_all_candidates": true, "storage": "csv"}, "ranking": {"export_per_category": 3, "export_top_n": 10, "mode": "robustness_first", "objectives": [{"direction": "maximize", "metric": "sharpe", "weight": 0.35}, {"direction": "maximize", "metric": "profit_factor", "weight": 0.25}, {"direction": "minimize", "metric": "max_drawdown_pct", "weight": 0.25}, {"direction": "maximize", "metric": "cagr", "weight": 0.15}]}, "style_overrides": {"btst": {"forced_exit_time": null, "max_hold_bars": 150, "min_hold_bars": 50, "min_trades": 30, "product_type": "CNC"}, "intraday": {"forced_exit_time": "15:15", "max_hold_bars": 75, "min_hold_bars": null, "min_trades": 200, "product_type": "MIS"}, "positional": {"forced_exit_time": null, "max_hold_bars": null, "min_hold_bars": 5, "min_trades": 20, "product_type": "CNC"}, "swing": {"forced_exit_time": null, "max_hold_bars": 360, "min_hold_bars": 10, "min_trades": 30, "product_type": "CNC"}}, "trading_styles": ["intraday"]}, "stats": {"generated": 1000, "backtested": 419, "rejected": 929, "winners": 15, "survivors": 121, "fast_rejections": 0, "backtest_rejections": 929, "validation_rejections": 0}, "rejections": {"stages": {"backtest_filter": 929}, "reasons": {"no_backtest_result": 581, "total_trades_below_min": 145, "sharpe_below_min": 203}}, "winners": [{"strategy_id": "63bbf3ef-8d3", "rank": 1, "category": "swing", "composite_score": 0.4587404, "pareto_front": 0, "winner_categories": ["best_overall", "best_sharpe", "best_cagr"], "backtest": {"strategy_id": "63bbf3ef-8d3", "net_profit": 37898.5803573429, "net_profit_pct": 33.372417732773634, "cagr": 4.1069, "sharpe": 2.1935, "sortino": 28.2546, "calmar": 0.6849, "profit_factor": 2.7597, "max_drawdown": 7885.97, "max_drawdown_pct": 5.9965, "win_rate": 0.5, "total_trades": 36, "winning_trades": 18, "losing_trades": 18, "avg_trade_pct": 0.927, "avg_win_pct": 2.9076, "avg_loss_pct": -1.0536, "recovery_factor": 4.8058, "expectancy": 0.927, "ulcer_index": 2.7111, "avg_hold_bars": 43.25, "max_consecutive_wins": 5, "max_consecutive_losses": 6}, "validation": {"strategy_id": "63bbf3ef-8d3", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 90.16, "param_stability_decay": 0.0, "stress_test_score": 65.69, "stress_max_drawdown": 0.0, "robustness_score": 51.95}, "signal_logic": {"entry_long": "(STOCH_K(k_period=14.0, smooth_k=5.0)@15m cross_below 70.0 OR OBV()@15m cross_below VWAP()@15m OR ROC(period=15.0)@15m cross_above 0.0)", "exit_long": {"stop_loss_pct": 1.0, "take_profit_pct": 7.0, "trailing_stop_pct": null, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "63bbf3ef-8d3", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "or", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "stoch_k", "params": {"k_period": 14.0, "smooth_k": 5.0}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": 70.0}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "obv", "params": {}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": {"type": "indicator", "indicator_type": "vwap", "params": {}, "timeframe": "15m", "source": "close"}}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "roc", "params": {"period": 15.0}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": 0.0}]}, "exit_long": {"stop_loss_pct": 1.0, "take_profit_pct": 7.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "53fe5ad5-629", "rank": 3, "category": "balanced", "composite_score": 0.4449516, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "53fe5ad5-629", "net_profit": 16886.896362740197, "net_profit_pct": 17.066384645752372, "cagr": 1.9736, "sharpe": 0.983, "sortino": 2.0669, "calmar": 0.1645, "profit_factor": 1.8058, "max_drawdown": 13969.86, "max_drawdown_pct": 11.9985, "win_rate": 0.5714, "total_trades": 21, "winning_trades": 12, "losing_trades": 9, "avg_trade_pct": 0.8127, "avg_win_pct": 3.1871, "avg_loss_pct": -2.3532, "recovery_factor": 1.2088, "expectancy": 0.8127, "ulcer_index": 4.824, "avg_hold_bars": 71.71, "max_consecutive_wins": 4, "max_consecutive_losses": 6}, "validation": {"strategy_id": "53fe5ad5-629", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 95.62, "param_stability_decay": 0.0, "stress_test_score": 102.41, "stress_max_drawdown": 0.0, "robustness_score": 66.01}, "signal_logic": {"entry_long": "MOMENTUM(period=20.0)@15m cross_above 0.0", "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 10.0, "trailing_stop_pct": null, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "53fe5ad5-629", "name": "", "trading_style": "intraday", "entry_long": {"type": "condition", "left": {"type": "indicator", "indicator_type": "momentum", "params": {"period": 20.0}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": 0.0}, "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 10.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "dd4a7305-de9", "rank": 4, "category": "swing", "composite_score": 0.4425671999999999, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "dd4a7305-de9", "net_profit": 10509.966656792618, "net_profit_pct": 10.392046792185402, "cagr": 1.2595, "sharpe": 1.1585, "sortino": 441071370781550.6, "calmar": 0.3053, "profit_factor": 2.2371, "max_drawdown": 4673.39, "max_drawdown_pct": 4.1252, "win_rate": 0.3, "total_trades": 20, "winning_trades": 6, "losing_trades": 14, "avg_trade_pct": 0.5196, "avg_win_pct": 3.132, "avg_loss_pct": -0.6, "recovery_factor": 2.2489, "expectancy": 0.5196, "ulcer_index": 1.8468, "avg_hold_bars": 26.2, "max_consecutive_wins": 2, "max_consecutive_losses": 7}, "validation": {"strategy_id": "dd4a7305-de9", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 100.0, "param_stability_decay": 0.0, "stress_test_score": 70.84, "stress_max_drawdown": 0.0, "robustness_score": 56.95}, "signal_logic": {"entry_long": "OBV()@15m cross_below VWMA(period=5.0)@15m", "exit_long": {"stop_loss_pct": 0.5, "take_profit_pct": 5.0, "trailing_stop_pct": 4.0, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "dd4a7305-de9", "name": "", "trading_style": "intraday", "entry_long": {"type": "condition", "left": {"type": "indicator", "indicator_type": "obv", "params": {}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": {"type": "indicator", "indicator_type": "vwma", "params": {"period": 5.0}, "timeframe": "15m", "source": "close"}}, "exit_long": {"stop_loss_pct": 0.5, "take_profit_pct": 5.0, "trailing_stop_pct": 4.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "46d4f4ee-7bb", "rank": 5, "category": "scalper", "composite_score": 0.4366388, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "46d4f4ee-7bb", "net_profit": 6405.672012369512, "net_profit_pct": 6.347580453225142, "cagr": 0.7807, "sharpe": 1.2002, "sortino": 9.5591, "calmar": 0.5044, "profit_factor": 2.1009, "max_drawdown": 1590.18, "max_drawdown_pct": 1.5476, "win_rate": 0.4167, "total_trades": 36, "winning_trades": 15, "losing_trades": 21, "avg_trade_pct": 0.1763, "avg_win_pct": 0.8076, "avg_loss_pct": -0.2746, "recovery_factor": 4.0283, "expectancy": 0.1763, "ulcer_index": 0.5624, "avg_hold_bars": 2.42, "max_consecutive_wins": 7, "max_consecutive_losses": 5}, "validation": {"strategy_id": "46d4f4ee-7bb", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 100.0, "param_stability_decay": 0.0, "stress_test_score": 63.1, "stress_max_drawdown": 0.0, "robustness_score": 54.37}, "signal_logic": {"entry_long": "(KELTNER_UPPER(multiplier=3.0, period=15.0)@15m cross_below ATR(period=7.0)@15m OR VWAP()@15m cross_above OBV()@15m)", "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 7.0, "trailing_stop_pct": 0.5, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "46d4f4ee-7bb", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "or", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "keltner_upper", "params": {"multiplier": 3.0, "period": 15.0}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": {"type": "indicator", "indicator_type": "atr", "params": {"period": 7.0}, "timeframe": "15m", "source": "close"}}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "vwap", "params": {}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": {"type": "indicator", "indicator_type": "obv", "params": {}, "timeframe": "15m", "source": "close"}}]}, "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 7.0, "trailing_stop_pct": 0.5, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "1a6f064f-19e", "rank": 6, "category": "conservative", "composite_score": 0.4261398, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "1a6f064f-19e", "net_profit": 20193.36303187514, "net_profit_pct": 19.548063615010975, "cagr": 2.3305, "sharpe": 1.2869, "sortino": 4.7609, "calmar": 0.306, "profit_factor": 1.6892, "max_drawdown": 9138.64, "max_drawdown_pct": 7.6158, "win_rate": 0.5556, "total_trades": 36, "winning_trades": 20, "losing_trades": 16, "avg_trade_pct": 0.543, "avg_win_pct": 2.3956, "avg_loss_pct": -1.7728, "recovery_factor": 2.2097, "expectancy": 0.543, "ulcer_index": 3.1977, "avg_hold_bars": 50.36, "max_consecutive_wins": 7, "max_consecutive_losses": 3}, "validation": {"strategy_id": "1a6f064f-19e", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 97.15, "param_stability_decay": 0.0, "stress_test_score": 72.22, "stress_max_drawdown": 0.0, "robustness_score": 56.46}, "signal_logic": {"entry_long": "(ATR(period=28.0)@15m cross_above KELTNER_LOWER(multiplier=2.5, period=10.0)@15m OR MOMENTUM(period=5.0)@15m cross_below 0.0 OR STOCH_K(k_period=21.0, smooth_k=3.0)@15m gt 30.0)", "exit_long": {"stop_loss_pct": 3.0, "take_profit_pct": 5.0, "trailing_stop_pct": 3.0, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "1a6f064f-19e", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "or", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "atr", "params": {"period": 28.0}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": {"type": "indicator", "indicator_type": "keltner_lower", "params": {"multiplier": 2.5, "period": 10.0}, "timeframe": "15m", "source": "close"}}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "momentum", "params": {"period": 5.0}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": 0.0}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "stoch_k", "params": {"k_period": 21.0, "smooth_k": 3.0}, "timeframe": "15m", "source": "close"}, "op": "gt", "right": 30.0}]}, "exit_long": {"stop_loss_pct": 3.0, "take_profit_pct": 5.0, "trailing_stop_pct": 3.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "dca38646-582", "rank": 7, "category": "balanced", "composite_score": 0.4248764, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "dca38646-582", "net_profit": 25232.40999683566, "net_profit_pct": 23.748797480261143, "cagr": 2.8582, "sharpe": 1.5151, "sortino": 4.1748, "calmar": 0.2534, "profit_factor": 2.1257, "max_drawdown": 14989.62, "max_drawdown_pct": 11.2787, "win_rate": 0.5862, "total_trades": 29, "winning_trades": 17, "losing_trades": 12, "avg_trade_pct": 0.8189, "avg_win_pct": 2.638, "avg_loss_pct": -1.7581, "recovery_factor": 1.6833, "expectancy": 0.8189, "ulcer_index": 5.6474, "avg_hold_bars": 58.48, "max_consecutive_wins": 5, "max_consecutive_losses": 6}, "validation": {"strategy_id": "dca38646-582", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 81.72, "param_stability_decay": 0.0, "stress_test_score": 83.74, "stress_max_drawdown": 0.0, "robustness_score": 55.15}, "signal_logic": {"entry_long": "MOMENTUM(period=15.0)@15m gt 0.0", "exit_long": {"stop_loss_pct": 2.5, "take_profit_pct": 7.0, "trailing_stop_pct": null, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "dca38646-582", "name": "", "trading_style": "intraday", "entry_long": {"type": "condition", "left": {"type": "indicator", "indicator_type": "momentum", "params": {"period": 15.0}, "timeframe": "15m", "source": "close"}, "op": "gt", "right": 0.0}, "exit_long": {"stop_loss_pct": 2.5, "take_profit_pct": 7.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "e3ae8ddd-45d", "rank": 8, "category": "balanced", "composite_score": 0.4216662, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "e3ae8ddd-45d", "net_profit": 12770.105106913674, "net_profit_pct": 13.216450322711207, "cagr": 1.5166, "sharpe": 0.847, "sortino": 2.1047, "calmar": 0.118, "profit_factor": 1.3969, "max_drawdown": 15367.13, "max_drawdown_pct": 12.8496, "win_rate": 0.5312, "total_trades": 32, "winning_trades": 17, "losing_trades": 15, "avg_trade_pct": 0.413, "avg_win_pct": 2.7362, "avg_loss_pct": -2.2199, "recovery_factor": 0.831, "expectancy": 0.413, "ulcer_index": 5.5705, "avg_hold_bars": 57.47, "max_consecutive_wins": 7, "max_consecutive_losses": 6}, "validation": {"strategy_id": "e3ae8ddd-45d", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 94.75, "param_stability_decay": 0.0, "stress_test_score": 95.69, "stress_max_drawdown": 0.0, "robustness_score": 63.48}, "signal_logic": {"entry_long": "(STOCH_D(d_period=3.0, k_period=21.0, smooth_k=4.0)@15m gt 30.0 OR MACD_HIST(fast_period=12.0, signal_period=11.0, slow_period=26.0)@15m cross_above MACD_SIGNAL(fast_period=10.0, signal_period=7.0, slow_period=28.0)@15m OR MACD_HIST(fast_period=12.0, signal_period=9.0, slow_period=30.0)@15m cross_below SMA(period=115.0)@15m)", "exit_long": {"stop_loss_pct": 3.0, "take_profit_pct": 4.0, "trailing_stop_pct": null, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "e3ae8ddd-45d", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "or", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "stoch_d", "params": {"d_period": 3.0, "k_period": 21.0, "smooth_k": 4.0}, "timeframe": "15m", "source": "close"}, "op": "gt", "right": 30.0}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "macd_hist", "params": {"fast_period": 12.0, "signal_period": 11.0, "slow_period": 26.0}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": {"type": "indicator", "indicator_type": "macd_signal", "params": {"fast_period": 10.0, "signal_period": 7.0, "slow_period": 28.0}, "timeframe": "15m", "source": "close"}}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "macd_hist", "params": {"fast_period": 12.0, "signal_period": 9.0, "slow_period": 30.0}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": {"type": "indicator", "indicator_type": "sma", "params": {"period": 115.0}, "timeframe": "15m", "source": "close"}}]}, "exit_long": {"stop_loss_pct": 3.0, "take_profit_pct": 4.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "18f3197f-f2d", "rank": 9, "category": "conservative", "composite_score": 0.4205546, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "18f3197f-f2d", "net_profit": 20799.158451174022, "net_profit_pct": 20.10064583100204, "cagr": 2.3949, "sharpe": 1.3037, "sortino": 2.6036, "calmar": 0.2453, "profit_factor": 2.0731, "max_drawdown": 11538.51, "max_drawdown_pct": 9.7617, "win_rate": 0.619, "total_trades": 21, "winning_trades": 13, "losing_trades": 8, "avg_trade_pct": 0.9572, "avg_win_pct": 2.9871, "avg_loss_pct": -2.3414, "recovery_factor": 1.8026, "expectancy": 0.9572, "ulcer_index": 3.6682, "avg_hold_bars": 69.19, "max_consecutive_wins": 5, "max_consecutive_losses": 5}, "validation": {"strategy_id": "18f3197f-f2d", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 72.33, "param_stability_decay": 0.0, "stress_test_score": 95.35, "stress_max_drawdown": 0.0, "robustness_score": 55.89}, "signal_logic": {"entry_long": "MOMENTUM(period=20.0)@15m cross_above 0.0", "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 7.0, "trailing_stop_pct": null, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "18f3197f-f2d", "name": "", "trading_style": "intraday", "entry_long": {"type": "condition", "left": {"type": "indicator", "indicator_type": "momentum", "params": {"period": 20.0}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": 0.0}, "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 7.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "15f179c4-864", "rank": 10, "category": "swing", "composite_score": 0.4173639999999999, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "15f179c4-864", "net_profit": 29126.291982551294, "net_profit_pct": 26.52836155434307, "cagr": 3.2534, "sharpe": 1.9555, "sortino": 17.1207, "calmar": 0.3263, "profit_factor": 2.3268, "max_drawdown": 12484.6, "max_drawdown_pct": 9.9694, "win_rate": 0.4595, "total_trades": 37, "winning_trades": 17, "losing_trades": 20, "avg_trade_pct": 0.717, "avg_win_pct": 2.7366, "avg_loss_pct": -0.9997, "recovery_factor": 2.333, "expectancy": 0.717, "ulcer_index": 3.7661, "avg_hold_bars": 40.38, "max_consecutive_wins": 5, "max_consecutive_losses": 6}, "validation": {"strategy_id": "15f179c4-864", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 80.7, "param_stability_decay": 0.0, "stress_test_score": 62.78, "stress_max_drawdown": 0.0, "robustness_score": 47.83}, "signal_logic": {"entry_long": "(STOCH_K(k_period=21.0, smooth_k=3.0)@15m cross_below 60.0 OR MOMENTUM(period=15.0)@15m cross_above 0.0)", "exit_long": {"stop_loss_pct": 1.0, "take_profit_pct": 5.0, "trailing_stop_pct": 3.0, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "15f179c4-864", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "or", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "stoch_k", "params": {"k_period": 21.0, "smooth_k": 3.0}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": 60.0}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "momentum", "params": {"period": 15.0}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": 0.0}]}, "exit_long": {"stop_loss_pct": 1.0, "take_profit_pct": 5.0, "trailing_stop_pct": 3.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "344f82d5-a00", "rank": 12, "category": "balanced", "composite_score": 0.411381, "pareto_front": 0, "winner_categories": ["best_robust"], "backtest": {"strategy_id": "344f82d5-a00", "net_profit": 13983.703617338775, "net_profit_pct": 14.645986430943049, "cagr": 1.6528, "sharpe": 0.8228, "sortino": 1.3637, "calmar": 0.1121, "profit_factor": 1.4793, "max_drawdown": 17434.2, "max_drawdown_pct": 14.7434, "win_rate": 0.6296, "total_trades": 27, "winning_trades": 17, "losing_trades": 10, "avg_trade_pct": 0.5424, "avg_win_pct": 2.6589, "avg_loss_pct": -3.0556, "recovery_factor": 0.8021, "expectancy": 0.5424, "ulcer_index": 6.6175, "avg_hold_bars": 65.59, "max_consecutive_wins": 5, "max_consecutive_losses": 3}, "validation": {"strategy_id": "344f82d5-a00", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 94.27, "param_stability_decay": 0.0, "stress_test_score": 90.01, "stress_max_drawdown": 0.0, "robustness_score": 61.43}, "signal_logic": {"entry_long": "STOCH_K(k_period=21.0, smooth_k=3.0)@15m lt 50.0", "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 7.0, "trailing_stop_pct": null, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "344f82d5-a00", "name": "", "trading_style": "intraday", "entry_long": {"type": "condition", "left": {"type": "indicator", "indicator_type": "stoch_k", "params": {"k_period": 21.0, "smooth_k": 3.0}, "timeframe": "15m", "source": "close"}, "op": "lt", "right": 50.0}, "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 7.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 0, "parent_ids": [], "forced_exit_time": "15:15"}}, {"strategy_id": "7f407b81-15c", "rank": 67, "category": "scalper", "composite_score": 0.2885068, "pareto_front": 0, "winner_categories": ["best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "7f407b81-15c", "net_profit": 7985.216044403845, "net_profit_pct": 7.79617935054115, "cagr": 0.9669, "sharpe": 1.8066, "sortino": 18.1903, "calmar": 3.4426, "profit_factor": 22.6766, "max_drawdown": 291.84, "max_drawdown_pct": 0.2808, "win_rate": 0.7778, "total_trades": 9, "winning_trades": 7, "losing_trades": 2, "avg_trade_pct": 0.8662, "avg_win_pct": 1.1651, "avg_loss_pct": -0.1798, "recovery_factor": 27.3615, "expectancy": 0.8662, "ulcer_index": 0.0711, "avg_hold_bars": 1.11, "max_consecutive_wins": 6, "max_consecutive_losses": 1}, "validation": {"strategy_id": "7f407b81-15c", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {"entry_long": "(VWAP()@15m cross_above OBV()@15m AND VOLUME_SMA(period=30.0)@15m cross_above OBV()@15m)", "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 7.0, "trailing_stop_pct": 0.5, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "7f407b81-15c", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "and", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "vwap", "params": {}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": {"type": "indicator", "indicator_type": "obv", "params": {}, "timeframe": "15m", "source": "close"}}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "volume_sma", "params": {"period": 30.0}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": {"type": "indicator", "indicator_type": "obv", "params": {}, "timeframe": "15m", "source": "close"}}]}, "exit_long": {"stop_loss_pct": 5.0, "take_profit_pct": 7.0, "trailing_stop_pct": 0.5, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 2, "parent_ids": ["885a59ba-880"], "forced_exit_time": "15:15"}}, {"strategy_id": "f92dc759-40b", "rank": 75, "category": "swing", "composite_score": 0.2713112, "pareto_front": 0, "winner_categories": ["best_sharpe"], "backtest": {"strategy_id": "f92dc759-40b", "net_profit": 17808.698684930045, "net_profit_pct": 16.713524537109606, "cagr": 2.0739, "sharpe": 2.1955, "sortino": 8.7485, "calmar": 1.3556, "profit_factor": 3.693, "max_drawdown": 1815.56, "max_drawdown_pct": 1.5298, "win_rate": 0.6296, "total_trades": 27, "winning_trades": 17, "losing_trades": 10, "avg_trade_pct": 0.619, "avg_win_pct": 1.3482, "avg_loss_pct": -0.6206, "recovery_factor": 9.809, "expectancy": 0.619, "ulcer_index": 0.478, "avg_hold_bars": 32.0, "max_consecutive_wins": 4, "max_consecutive_losses": 2}, "validation": {"strategy_id": "f92dc759-40b", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {"entry_long": "(ADX(period=24)@15m gt 15.87 AND ATR(period=34)@15m cross_below ATR(period=20)@15m)", "exit_long": {"stop_loss_pct": 4.61, "take_profit_pct": 4.0, "trailing_stop_pct": 1.5, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "f92dc759-40b", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "and", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "adx", "params": {"period": 24}, "timeframe": "15m", "source": "close"}, "op": "gt", "right": 15.87}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "atr", "params": {"period": 34}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": {"type": "indicator", "indicator_type": "atr", "params": {"period": 20}, "timeframe": "15m", "source": "close"}}]}, "exit_long": {"stop_loss_pct": 4.61, "take_profit_pct": 4.0, "trailing_stop_pct": 1.5, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 2, "parent_ids": ["02c5c464-412"], "forced_exit_time": "15:15"}}, {"strategy_id": "18f623e9-63d", "rank": 84, "category": "conservative", "composite_score": 0.2381992, "pareto_front": 0, "winner_categories": ["best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "18f623e9-63d", "net_profit": 3223.6659000831714, "net_profit_pct": 3.223665900083175, "cagr": 0.3982, "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "profit_factor": 3223.6659, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 1, "winning_trades": 1, "losing_trades": 0, "avg_trade_pct": 3.2237, "avg_win_pct": 3.2237, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 3.2237, "ulcer_index": 0.0, "avg_hold_bars": 50.0, "max_consecutive_wins": 1, "max_consecutive_losses": 0}, "validation": {"strategy_id": "18f623e9-63d", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {"entry_long": "(STOCH_K(k_period=21, smooth_k=3)@15m cross_below 73.92 AND ROC(period=9)@15m cross_above 0.0)", "exit_long": {"stop_loss_pct": 3.1, "take_profit_pct": 5.96, "trailing_stop_pct": 2.04, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "18f623e9-63d", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "and", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "stoch_k", "params": {"k_period": 21, "smooth_k": 3}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": 73.92}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "roc", "params": {"period": 9}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": 0.0}]}, "exit_long": {"stop_loss_pct": 3.1, "take_profit_pct": 5.96, "trailing_stop_pct": 2.04, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 5, "parent_ids": ["96fc0676-e39"], "forced_exit_time": "15:15"}}, {"strategy_id": "6185d900-c7e", "rank": 85, "category": "conservative", "composite_score": 0.2380752, "pareto_front": 0, "winner_categories": ["best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "6185d900-c7e", "net_profit": 1205.4703102927451, "net_profit_pct": 1.2054703102927433, "cagr": 0.1502, "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "profit_factor": 1205.4703, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 1, "winning_trades": 1, "losing_trades": 0, "avg_trade_pct": 1.2055, "avg_win_pct": 1.2055, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 1.2055, "ulcer_index": 0.0, "avg_hold_bars": 75.0, "max_consecutive_wins": 1, "max_consecutive_losses": 0}, "validation": {"strategy_id": "6185d900-c7e", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {"entry_long": "(ROC(period=11)@15m cross_above 0.0 AND STOCH_K(k_period=24, smooth_k=3)@15m cross_below 56.37)", "exit_long": {"stop_loss_pct": 0.84, "take_profit_pct": 2.63, "trailing_stop_pct": 3.31, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "6185d900-c7e", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "and", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "roc", "params": {"period": 11}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": 0.0}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "stoch_k", "params": {"k_period": 24, "smooth_k": 3}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": 56.37}]}, "exit_long": {"stop_loss_pct": 0.84, "take_profit_pct": 2.63, "trailing_stop_pct": 3.31, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 3, "parent_ids": ["9b4f9973-3fe"], "forced_exit_time": "15:15"}}, {"strategy_id": "f077d8d4-bb3", "rank": 86, "category": "swing", "composite_score": 0.2354724, "pareto_front": 0, "winner_categories": ["best_cagr"], "backtest": {"strategy_id": "f077d8d4-bb3", "net_profit": 35780.72587865265, "net_profit_pct": 31.842417732773566, "cagr": 3.9053, "sharpe": 2.0644, "sortino": 24.3367, "calmar": 0.5847, "profit_factor": 2.5537, "max_drawdown": 8743.2, "max_drawdown_pct": 6.6787, "win_rate": 0.5, "total_trades": 36, "winning_trades": 18, "losing_trades": 18, "avg_trade_pct": 0.8845, "avg_win_pct": 2.9076, "avg_loss_pct": -1.1386, "recovery_factor": 4.0924, "expectancy": 0.8845, "ulcer_index": 2.9905, "avg_hold_bars": 43.39, "max_consecutive_wins": 5, "max_consecutive_losses": 6}, "validation": {"strategy_id": "f077d8d4-bb3", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {"entry_long": "(STOCH_K(k_period=14.0, smooth_k=5.0)@15m cross_below 70.0 OR OBV()@15m cross_below VWAP()@15m OR ROC(period=15.0)@15m cross_above 0.0)", "exit_long": {"stop_loss_pct": 1.09, "take_profit_pct": 7.0, "trailing_stop_pct": null, "max_hold_bars": 75}, "trading_style": "intraday", "timeframes": ["15m"]}, "genome": {"id": "f077d8d4-bb3", "name": "", "trading_style": "intraday", "entry_long": {"type": "composite", "logic": "or", "children": [{"type": "condition", "left": {"type": "indicator", "indicator_type": "stoch_k", "params": {"k_period": 14.0, "smooth_k": 5.0}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": 70.0}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "obv", "params": {}, "timeframe": "15m", "source": "close"}, "op": "cross_below", "right": {"type": "indicator", "indicator_type": "vwap", "params": {}, "timeframe": "15m", "source": "close"}}, {"type": "condition", "left": {"type": "indicator", "indicator_type": "roc", "params": {"period": 15.0}, "timeframe": "15m", "source": "close"}, "op": "cross_above", "right": 0.0}]}, "exit_long": {"stop_loss_pct": 1.09, "take_profit_pct": 7.0, "max_hold_bars": 75}, "timeframes_used": ["15m"], "product_type": "MIS", "position_size_pct": 100.0, "max_positions": 1, "generation": 1, "parent_ids": ["63bbf3ef-8d3"], "forced_exit_time": "15:15"}}]}, {"run_id": "run_063159f2", "name": "Default Research", "description": "Default configuration for quick testing", "symbols": ["SBIN"], "timeframes": ["15m", "1h"], "start_date": "2026-01-01", "end_date": "2026-06-25", "config": {"cost_model": {"commission_pct": 0.03, "min_commission": 20.0, "slippage_pct": 0.02}, "data": {"end_date": "2026-06-25", "openalgo": {"api_key": "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d", "host": "http://127.0.0.1:5000", "source": "db"}, "start_date": "2026-01-01", "symbols": [{"exchange": "NSE", "symbol": "SBIN"}], "test_pct": 0.15, "timeframes": ["15m", "1h"], "train_pct": 0.7, "validation_pct": 0.15}, "description": "Default configuration for quick testing", "evolution": {"crossover_rate": 0.5, "elitism_pct": 0.1, "enabled": true, "generations": 3, "mutation_rate": 0.3, "population_size": 100, "tournament_size": 3}, "execution": {"chunk_size": 100, "max_workers": null, "memory_limit_gb": 8.0}, "filters": {"backtest": {"max_drawdown": 0.3, "min_cagr": 0.0, "min_profit_factor": 1.2, "min_sharpe": 0.8, "min_trades": 20, "min_win_rate": 0.0}, "fast_reject": {"max_complexity": 4, "min_indicators": 1}, "validation": {"max_oos_sharpe_decay": 0.4, "min_walk_forward_consistency": 0.6, "monte_carlo_confidence": 0.95, "param_stability_tolerance": 0.25}}, "generation": {"allow_short": false, "indicator_categories": ["trend", "momentum", "volume", "volatility"], "max_conditions_per_entry": 3, "mode": "random", "multi_timeframe": false, "target_count": 1000}, "name": "Default Research", "output": {"base_dir": "./data/runs", "export_dir": "./data/exports", "save_all_candidates": true, "storage": "csv"}, "ranking": {"export_per_category": 3, "export_top_n": 10, "mode": "robustness_first", "objectives": [{"direction": "maximize", "metric": "sharpe", "weight": 0.35}, {"direction": "maximize", "metric": "profit_factor", "weight": 0.25}, {"direction": "minimize", "metric": "max_drawdown_pct", "weight": 0.25}, {"direction": "maximize", "metric": "cagr", "weight": 0.15}]}, "style_overrides": {"btst": {"forced_exit_time": null, "max_hold_bars": 150, "min_hold_bars": 50, "min_trades": 30, "product_type": "CNC"}, "intraday": {"forced_exit_time": "15:15", "max_hold_bars": 75, "min_hold_bars": null, "min_trades": 200, "product_type": "MIS"}, "positional": {"forced_exit_time": null, "max_hold_bars": null, "min_hold_bars": 5, "min_trades": 20, "product_type": "CNC"}, "swing": {"forced_exit_time": null, "max_hold_bars": 360, "min_hold_bars": 10, "min_trades": 30, "product_type": "CNC"}}, "trading_styles": ["intraday"]}, "stats": {"generated": 1000, "backtested": 446, "rejected": 943, "winners": 19, "survivors": 107, "fast_rejections": 1, "backtest_rejections": 942, "validation_rejections": 0}, "rejections": {"stages": {"fast_reject": 1, "backtest_filter": 942}, "reasons": {"redundant_conditions": 1, "sharpe_below_min": 199, "no_backtest_result": 553, "total_trades_below_min": 190}}, "winners": [{"strategy_id": "71759070-a41", "rank": 1, "category": "swing", "composite_score": 0.4425671999999999, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "71759070-a41", "net_profit": 10509.966656792618, "net_profit_pct": 10.392046792185402, "cagr": 1.2595, "sharpe": 1.1585, "sortino": 441071370781550.6, "calmar": 0.3053, "profit_factor": 2.2371, "max_drawdown": 4673.39, "max_drawdown_pct": 4.1252, "win_rate": 0.3, "total_trades": 20, "winning_trades": 6, "losing_trades": 14, "avg_trade_pct": 0.5196, "avg_win_pct": 3.132, "avg_loss_pct": -0.6, "recovery_factor": 2.2489, "expectancy": 0.5196, "ulcer_index": 1.8468, "avg_hold_bars": 26.2, "max_consecutive_wins": 2, "max_consecutive_losses": 7}, "validation": {"strategy_id": "71759070-a41", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 100.0, "param_stability_decay": 0.0, "stress_test_score": 70.84, "stress_max_drawdown": 0.0, "robustness_score": 56.95}, "signal_logic": {}, "genome": {}}, {"strategy_id": "33293994-078", "rank": 2, "category": "swing", "composite_score": 0.4409126, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "33293994-078", "net_profit": 21403.226056219122, "net_profit_pct": 20.28585951916225, "cagr": 2.4589, "sharpe": 1.5453, "sortino": 8.4434, "calmar": 0.3296, "profit_factor": 1.7872, "max_drawdown": 8806.49, "max_drawdown_pct": 7.4601, "win_rate": 0.5938, "total_trades": 32, "winning_trades": 19, "losing_trades": 13, "avg_trade_pct": 0.6339, "avg_win_pct": 2.4239, "avg_loss_pct": -1.9822, "recovery_factor": 2.4304, "expectancy": 0.6339, "ulcer_index": 2.8612, "avg_hold_bars": 44.25, "max_consecutive_wins": 5, "max_consecutive_losses": 3}, "validation": {"strategy_id": "33293994-078", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 83.37, "param_stability_decay": 0.0, "stress_test_score": 93.78, "stress_max_drawdown": 0.0, "robustness_score": 59.05}, "signal_logic": {}, "genome": {}}, {"strategy_id": "55c47217-1b5", "rank": 3, "category": "conservative", "composite_score": 0.4287748, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "55c47217-1b5", "net_profit": 14724.501842068741, "net_profit_pct": 14.454298442174478, "cagr": 1.7353, "sharpe": 1.2058, "sortino": 3.1718, "calmar": 0.2083, "profit_factor": 1.8916, "max_drawdown": 9924.53, "max_drawdown_pct": 8.3297, "win_rate": 0.5, "total_trades": 24, "winning_trades": 12, "losing_trades": 12, "avg_trade_pct": 0.6023, "avg_win_pct": 2.5555, "avg_loss_pct": -1.351, "recovery_factor": 1.4836, "expectancy": 0.6023, "ulcer_index": 4.6549, "avg_hold_bars": 54.46, "max_consecutive_wins": 4, "max_consecutive_losses": 4}, "validation": {"strategy_id": "55c47217-1b5", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 84.72, "param_stability_decay": 0.0, "stress_test_score": 89.91, "stress_max_drawdown": 0.0, "robustness_score": 58.21}, "signal_logic": {}, "genome": {}}, {"strategy_id": "5d7cb9c1-a42", "rank": 4, "category": "conservative", "composite_score": 0.4279666, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "5d7cb9c1-a42", "net_profit": 17807.03861800843, "net_profit_pct": 17.232808326218652, "cagr": 2.0738, "sharpe": 1.3328, "sortino": 3.2127, "calmar": 0.2184, "profit_factor": 1.9106, "max_drawdown": 12047.35, "max_drawdown_pct": 9.4949, "win_rate": 0.4815, "total_trades": 27, "winning_trades": 13, "losing_trades": 14, "avg_trade_pct": 0.6383, "avg_win_pct": 2.7814, "avg_loss_pct": -1.3518, "recovery_factor": 1.4781, "expectancy": 0.6383, "ulcer_index": 4.8182, "avg_hold_bars": 59.11, "max_consecutive_wins": 5, "max_consecutive_losses": 5}, "validation": {"strategy_id": "5d7cb9c1-a42", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 93.43, "param_stability_decay": 0.0, "stress_test_score": 76.87, "stress_max_drawdown": 0.0, "robustness_score": 56.77}, "signal_logic": {}, "genome": {}}, {"strategy_id": "6eee6c20-385", "rank": 5, "category": "balanced", "composite_score": 0.4220998, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "6eee6c20-385", "net_profit": 23483.462124749392, "net_profit_pct": 22.463003353111056, "cagr": 2.6772, "sharpe": 1.364, "sortino": 2.9216, "calmar": 0.2589, "profit_factor": 1.9763, "max_drawdown": 13065.39, "max_drawdown_pct": 10.3398, "win_rate": 0.5926, "total_trades": 27, "winning_trades": 16, "losing_trades": 11, "avg_trade_pct": 0.832, "avg_win_pct": 2.8419, "avg_loss_pct": -2.0916, "recovery_factor": 1.7974, "expectancy": 0.832, "ulcer_index": 4.6029, "avg_hold_bars": 64.93, "max_consecutive_wins": 5, "max_consecutive_losses": 4}, "validation": {"strategy_id": "6eee6c20-385", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 94.89, "param_stability_decay": 0.0, "stress_test_score": 69.49, "stress_max_drawdown": 0.0, "robustness_score": 54.79}, "signal_logic": {}, "genome": {}}, {"strategy_id": "fdd8d119-756", "rank": 6, "category": "balanced", "composite_score": 0.4183912, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "fdd8d119-756", "net_profit": 17437.83196570148, "net_profit_pct": 17.19290909076254, "cagr": 2.0336, "sharpe": 1.1354, "sortino": 3.5666, "calmar": 0.1865, "profit_factor": 2.0117, "max_drawdown": 13139.47, "max_drawdown_pct": 10.9044, "win_rate": 0.5455, "total_trades": 22, "winning_trades": 12, "losing_trades": 10, "avg_trade_pct": 0.7815, "avg_win_pct": 2.8489, "avg_loss_pct": -1.6993, "recovery_factor": 1.3271, "expectancy": 0.7815, "ulcer_index": 4.9754, "avg_hold_bars": 62.41, "max_consecutive_wins": 4, "max_consecutive_losses": 6}, "validation": {"strategy_id": "fdd8d119-756", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 82.54, "param_stability_decay": 0.0, "stress_test_score": 87.79, "stress_max_drawdown": 0.0, "robustness_score": 56.78}, "signal_logic": {}, "genome": {}}, {"strategy_id": "effc096a-273", "rank": 7, "category": "conservative", "composite_score": 0.4166748, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "effc096a-273", "net_profit": 24945.42758009596, "net_profit_pct": 23.50342622561187, "cagr": 2.8286, "sharpe": 1.5067, "sortino": 4.5543, "calmar": 0.2901, "profit_factor": 2.1092, "max_drawdown": 12946.2, "max_drawdown_pct": 9.7496, "win_rate": 0.5667, "total_trades": 30, "winning_trades": 17, "losing_trades": 13, "avg_trade_pct": 0.7834, "avg_win_pct": 2.629, "avg_loss_pct": -1.63, "recovery_factor": 1.9269, "expectancy": 0.7834, "ulcer_index": 4.9167, "avg_hold_bars": 55.53, "max_consecutive_wins": 5, "max_consecutive_losses": 4}, "validation": {"strategy_id": "effc096a-273", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 87.56, "param_stability_decay": 0.0, "stress_test_score": 67.54, "stress_max_drawdown": 0.0, "robustness_score": 51.7}, "signal_logic": {}, "genome": {}}, {"strategy_id": "27109045-1a5", "rank": 8, "category": "balanced", "composite_score": 0.4155223999999999, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "27109045-1a5", "net_profit": 15461.421772874877, "net_profit_pct": 15.468865107684396, "cagr": 1.817, "sharpe": 1.0402, "sortino": 2.7479, "calmar": 0.1472, "profit_factor": 1.5846, "max_drawdown": 14874.28, "max_drawdown_pct": 12.3418, "win_rate": 0.5333, "total_trades": 30, "winning_trades": 16, "losing_trades": 14, "avg_trade_pct": 0.5156, "avg_win_pct": 2.6206, "avg_loss_pct": -1.89, "recovery_factor": 1.0395, "expectancy": 0.5156, "ulcer_index": 5.2486, "avg_hold_bars": 56.2, "max_consecutive_wins": 5, "max_consecutive_losses": 7}, "validation": {"strategy_id": "27109045-1a5", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 95.2, "param_stability_decay": 0.0, "stress_test_score": 81.4, "stress_max_drawdown": 0.0, "robustness_score": 58.87}, "signal_logic": {}, "genome": {}}, {"strategy_id": "14ffde88-490", "rank": 9, "category": "conservative", "composite_score": 0.4150283999999999, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "14ffde88-490", "net_profit": 22956.766595659792, "net_profit_pct": 21.971475560712197, "cagr": 2.6222, "sharpe": 1.3723, "sortino": 4.3897, "calmar": 0.3062, "profit_factor": 1.8355, "max_drawdown": 10103.62, "max_drawdown_pct": 8.5636, "win_rate": 0.6296, "total_trades": 27, "winning_trades": 17, "losing_trades": 10, "avg_trade_pct": 0.8138, "avg_win_pct": 2.8393, "avg_loss_pct": -2.6296, "recovery_factor": 2.2721, "expectancy": 0.8138, "ulcer_index": 3.5438, "avg_hold_bars": 55.85, "max_consecutive_wins": 4, "max_consecutive_losses": 3}, "validation": {"strategy_id": "14ffde88-490", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 72.02, "param_stability_decay": 0.0, "stress_test_score": 91.4, "stress_max_drawdown": 0.0, "robustness_score": 54.47}, "signal_logic": {}, "genome": {}}, {"strategy_id": "d6429179-775", "rank": 10, "category": "conservative", "composite_score": 0.4110268, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "d6429179-775", "net_profit": 21751.436991103954, "net_profit_pct": 20.774216589200183, "cagr": 2.4957, "sharpe": 1.403, "sortino": 4.5477, "calmar": 0.2727, "profit_factor": 2.1307, "max_drawdown": 11471.74, "max_drawdown_pct": 9.1505, "win_rate": 0.5862, "total_trades": 29, "winning_trades": 17, "losing_trades": 12, "avg_trade_pct": 0.7164, "avg_win_pct": 2.3027, "avg_loss_pct": -1.531, "recovery_factor": 1.8961, "expectancy": 0.7164, "ulcer_index": 3.8407, "avg_hold_bars": 58.48, "max_consecutive_wins": 5, "max_consecutive_losses": 6}, "validation": {"strategy_id": "d6429179-775", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 82.5, "param_stability_decay": 0.0, "stress_test_score": 70.36, "stress_max_drawdown": 0.0, "robustness_score": 50.95}, "signal_logic": {}, "genome": {}}, {"strategy_id": "b7c84eb6-423", "rank": 11, "category": "swing", "composite_score": 0.4092506, "pareto_front": 0, "winner_categories": ["best_robust"], "backtest": {"strategy_id": "b7c84eb6-423", "net_profit": 11002.256501695272, "net_profit_pct": 11.316144506155204, "cagr": 1.3159, "sharpe": 0.8443, "sortino": 7.2894, "calmar": 0.1023, "profit_factor": 1.3868, "max_drawdown": 14641.16, "max_drawdown_pct": 12.8654, "win_rate": 0.4571, "total_trades": 35, "winning_trades": 16, "losing_trades": 19, "avg_trade_pct": 0.3233, "avg_win_pct": 2.5358, "avg_loss_pct": -1.5398, "recovery_factor": 0.7515, "expectancy": 0.3233, "ulcer_index": 5.4014, "avg_hold_bars": 43.83, "max_consecutive_wins": 4, "max_consecutive_losses": 6}, "validation": {"strategy_id": "b7c84eb6-423", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 85.81, "param_stability_decay": 0.0, "stress_test_score": 96.86, "stress_max_drawdown": 0.0, "robustness_score": 60.89}, "signal_logic": {}, "genome": {}}, {"strategy_id": "7dab0a0c-e1f", "rank": 31, "category": "swing", "composite_score": 0.3703894, "pareto_front": 0, "winner_categories": ["best_sharpe"], "backtest": {"strategy_id": "7dab0a0c-e1f", "net_profit": 20348.644737832452, "net_profit_pct": 19.00537390484561, "cagr": 2.347, "sharpe": 1.9657, "sortino": 6.9231, "calmar": 0.5813, "profit_factor": 2.0172, "max_drawdown": 5017.45, "max_drawdown_pct": 4.0373, "win_rate": 0.4667, "total_trades": 60, "winning_trades": 28, "losing_trades": 32, "avg_trade_pct": 0.3168, "avg_win_pct": 1.346, "avg_loss_pct": -0.5839, "recovery_factor": 4.0556, "expectancy": 0.3168, "ulcer_index": 1.2438, "avg_hold_bars": 13.4, "max_consecutive_wins": 5, "max_consecutive_losses": 4}, "validation": {"strategy_id": "7dab0a0c-e1f", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 89.17, "param_stability_decay": 0.0, "stress_test_score": 8.46, "stress_max_drawdown": 0.0, "robustness_score": 32.54}, "signal_logic": {}, "genome": {}}, {"strategy_id": "c84daf4c-fd7", "rank": 49, "category": "swing", "composite_score": 0.3136924, "pareto_front": 0, "winner_categories": ["best_sharpe", "best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "c84daf4c-fd7", "net_profit": 2483.69174329986, "net_profit_pct": 2.466176034287135, "cagr": 0.3078, "sharpe": 2.6978, "sortino": 2.6978, "calmar": 0.0, "profit_factor": 2466.176, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 3, "winning_trades": 3, "losing_trades": 0, "avg_trade_pct": 0.8221, "avg_win_pct": 0.8221, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 0.8221, "ulcer_index": 0.0, "avg_hold_bars": 18.33, "max_consecutive_wins": 3, "max_consecutive_losses": 0}, "validation": {"strategy_id": "c84daf4c-fd7", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "642a9e49-eca", "rank": 74, "category": "swing", "composite_score": 0.2384624, "pareto_front": 0, "winner_categories": ["best_sharpe"], "backtest": {"strategy_id": "642a9e49-eca", "net_profit": 23404.826627350078, "net_profit_pct": 21.518967346717655, "cagr": 2.669, "sharpe": 2.233, "sortino": 8.0984, "calmar": 0.6716, "profit_factor": 2.2276, "max_drawdown": 5060.83, "max_drawdown_pct": 3.974, "win_rate": 0.5085, "total_trades": 59, "winning_trades": 30, "losing_trades": 29, "avg_trade_pct": 0.3647, "avg_win_pct": 1.3016, "avg_loss_pct": -0.6044, "recovery_factor": 4.6247, "expectancy": 0.3647, "ulcer_index": 1.1135, "avg_hold_bars": 13.86, "max_consecutive_wins": 6, "max_consecutive_losses": 4}, "validation": {"strategy_id": "642a9e49-eca", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "1adfc34b-1a0", "rank": 75, "category": "scalper", "composite_score": 0.2380976, "pareto_front": 0, "winner_categories": ["best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "1adfc34b-1a0", "net_profit": 1571.1001330040017, "net_profit_pct": 1.571100133004004, "cagr": 0.1954, "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "profit_factor": 1571.1001, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 1, "winning_trades": 1, "losing_trades": 0, "avg_trade_pct": 1.5711, "avg_win_pct": 1.5711, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 1.5711, "ulcer_index": 0.0, "avg_hold_bars": 1.0, "max_consecutive_wins": 1, "max_consecutive_losses": 0}, "validation": {"strategy_id": "1adfc34b-1a0", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "23e0b829-510", "rank": 76, "category": "swing", "composite_score": 0.2380847999999999, "pareto_front": 0, "winner_categories": ["best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "23e0b829-510", "net_profit": 1359.8425196850585, "net_profit_pct": 1.3598425196850523, "cagr": 0.1693, "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "profit_factor": 1359.8425, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 1, "winning_trades": 1, "losing_trades": 0, "avg_trade_pct": 1.3598, "avg_win_pct": 1.3598, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 1.3598, "ulcer_index": 0.0, "avg_hold_bars": 29.0, "max_consecutive_wins": 1, "max_consecutive_losses": 0}, "validation": {"strategy_id": "23e0b829-510", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "c05e31d8-afd", "rank": 80, "category": "conservative", "composite_score": 0.2287372, "pareto_front": 0, "winner_categories": ["best_cagr"], "backtest": {"strategy_id": "c05e31d8-afd", "net_profit": 29835.417370186246, "net_profit_pct": 27.279352520965396, "cagr": 3.3243, "sharpe": 1.823, "sortino": 5.6028, "calmar": 0.4999, "profit_factor": 2.5665, "max_drawdown": 8829.57, "max_drawdown_pct": 6.6494, "win_rate": 0.5667, "total_trades": 30, "winning_trades": 17, "losing_trades": 13, "avg_trade_pct": 0.9093, "avg_win_pct": 2.629, "avg_loss_pct": -1.3396, "recovery_factor": 3.379, "expectancy": 0.9093, "ulcer_index": 3.164, "avg_hold_bars": 55.53, "max_consecutive_wins": 5, "max_consecutive_losses": 4}, "validation": {"strategy_id": "c05e31d8-afd", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "06e53d47-6ae", "rank": 84, "category": "swing", "composite_score": 0.2207572, "pareto_front": 0, "winner_categories": ["best_cagr"], "backtest": {"strategy_id": "06e53d47-6ae", "net_profit": 29657.94190228189, "net_profit_pct": 27.036877616628907, "cagr": 3.3066, "sharpe": 1.8669, "sortino": 42.0924, "calmar": 0.376, "profit_factor": 2.3209, "max_drawdown": 11547.07, "max_drawdown_pct": 8.7936, "win_rate": 0.3137, "total_trades": 51, "winning_trades": 16, "losing_trades": 35, "avg_trade_pct": 0.5301, "avg_win_pct": 2.969, "avg_loss_pct": -0.5848, "recovery_factor": 2.5684, "expectancy": 0.5301, "ulcer_index": 3.5802, "avg_hold_bars": 29.82, "max_consecutive_wins": 3, "max_consecutive_losses": 10}, "validation": {"strategy_id": "06e53d47-6ae", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "143d3d81-d4e", "rank": 91, "category": "balanced", "composite_score": 0.2119692, "pareto_front": 0, "winner_categories": ["best_cagr"], "backtest": {"strategy_id": "143d3d81-d4e", "net_profit": 27689.943565358015, "net_profit_pct": 25.600624933735354, "cagr": 3.1089, "sharpe": 1.7133, "sortino": 4.4204, "calmar": 0.3017, "profit_factor": 2.2524, "max_drawdown": 13680.93, "max_drawdown_pct": 10.3029, "win_rate": 0.5806, "total_trades": 31, "winning_trades": 18, "losing_trades": 13, "avg_trade_pct": 0.8258, "avg_win_pct": 2.5579, "avg_loss_pct": -1.5725, "recovery_factor": 2.024, "expectancy": 0.8258, "ulcer_index": 4.0358, "avg_hold_bars": 55.32, "max_consecutive_wins": 5, "max_consecutive_losses": 4}, "validation": {"strategy_id": "143d3d81-d4e", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}]}, {"run_id": "run_16cd5325", "name": "Default Research", "description": "Default configuration for quick testing", "symbols": ["SBIN"], "timeframes": ["15m", "1h"], "start_date": "2026-01-01", "end_date": "2026-06-25", "config": {"cost_model": {"commission_pct": 0.03, "min_commission": 20.0, "slippage_pct": 0.02}, "data": {"end_date": "2026-06-25", "openalgo": {"api_key": "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d", "host": "http://127.0.0.1:5000", "source": "db"}, "start_date": "2026-01-01", "symbols": [{"exchange": "NSE", "symbol": "SBIN"}], "test_pct": 0.15, "timeframes": ["15m", "1h"], "train_pct": 0.7, "validation_pct": 0.15}, "description": "Default configuration for quick testing", "evolution": {"crossover_rate": 0.5, "elitism_pct": 0.1, "enabled": true, "generations": 3, "mutation_rate": 0.3, "population_size": 100, "tournament_size": 3}, "execution": {"chunk_size": 100, "max_workers": null, "memory_limit_gb": 8.0}, "filters": {"backtest": {"max_drawdown": 0.3, "min_cagr": 0.0, "min_profit_factor": 1.2, "min_sharpe": 0.8, "min_trades": 20, "min_win_rate": 0.0}, "fast_reject": {"max_complexity": 4, "min_indicators": 1}, "validation": {"max_oos_sharpe_decay": 0.4, "min_walk_forward_consistency": 0.6, "monte_carlo_confidence": 0.95, "param_stability_tolerance": 0.25}}, "generation": {"allow_short": false, "indicator_categories": ["trend", "momentum"], "max_conditions_per_entry": 3, "mode": "random", "multi_timeframe": false, "target_count": 100}, "name": "Default Research", "output": {"base_dir": "./data/runs", "export_dir": "./data/exports", "save_all_candidates": true, "storage": "csv"}, "ranking": {"export_per_category": 3, "export_top_n": 10, "mode": "robustness_first", "objectives": [{"direction": "maximize", "metric": "sharpe", "weight": 0.35}, {"direction": "maximize", "metric": "profit_factor", "weight": 0.25}, {"direction": "minimize", "metric": "max_drawdown_pct", "weight": 0.25}, {"direction": "maximize", "metric": "cagr", "weight": 0.15}]}, "style_overrides": {"btst": {"forced_exit_time": null, "max_hold_bars": 150, "min_hold_bars": 50, "min_trades": 30, "product_type": "CNC"}, "intraday": {"forced_exit_time": "15:15", "max_hold_bars": 75, "min_hold_bars": null, "min_trades": 200, "product_type": "MIS"}, "positional": {"forced_exit_time": null, "max_hold_bars": null, "min_hold_bars": 5, "min_trades": 20, "product_type": "CNC"}, "swing": {"forced_exit_time": null, "max_hold_bars": 360, "min_hold_bars": 10, "min_trades": 30, "product_type": "CNC"}}, "trading_styles": ["intraday", "swing"]}, "stats": {"generated": 100, "backtested": 28, "rejected": 97, "winners": 11, "survivors": 53, "fast_rejections": 0, "backtest_rejections": 97, "validation_rejections": 0}, "rejections": {"stages": {"backtest_filter": 97}, "reasons": {"no_backtest_result": 72, "sharpe_below_min": 13, "total_trades_below_min": 12}}, "winners": [{"strategy_id": "550107c7-328", "rank": 1, "category": "swing", "composite_score": 0.369506, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "550107c7-328", "net_profit": 14088.46574293886, "net_profit_pct": 13.744170315072886, "cagr": 1.6645, "sharpe": 1.2912, "sortino": 394561355659890.9, "calmar": 0.2302, "profit_factor": 1.7899, "max_drawdown": 8319.58, "max_drawdown_pct": 7.231, "win_rate": 0.275, "total_trades": 40, "winning_trades": 11, "losing_trades": 29, "avg_trade_pct": 0.3436, "avg_win_pct": 2.8313, "avg_loss_pct": -0.6, "recovery_factor": 1.6934, "expectancy": 0.3436, "ulcer_index": 2.8181, "avg_hold_bars": 23.65, "max_consecutive_wins": 2, "max_consecutive_losses": 12}, "validation": {"strategy_id": "550107c7-328", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 71.8, "param_stability_decay": 0.0, "stress_test_score": 54.57, "stress_max_drawdown": 0.0, "robustness_score": 42.12}, "signal_logic": {}, "genome": {}}, {"strategy_id": "792e41eb-0a2", "rank": 2, "category": "balanced", "composite_score": 0.3403476, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "792e41eb-0a2", "net_profit": 15396.92204797332, "net_profit_pct": 15.58423634004641, "cagr": 1.8098, "sharpe": 0.9703, "sortino": 1.9118, "calmar": 0.1233, "profit_factor": 1.6213, "max_drawdown": 18151.04, "max_drawdown_pct": 14.6779, "win_rate": 0.5185, "total_trades": 27, "winning_trades": 14, "losing_trades": 13, "avg_trade_pct": 0.5772, "avg_win_pct": 2.9049, "avg_loss_pct": -1.9295, "recovery_factor": 0.8483, "expectancy": 0.5772, "ulcer_index": 6.9681, "avg_hold_bars": 64.04, "max_consecutive_wins": 5, "max_consecutive_losses": 6}, "validation": {"strategy_id": "792e41eb-0a2", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 63.96, "param_stability_decay": 0.0, "stress_test_score": 62.72, "stress_max_drawdown": 0.0, "robustness_score": 42.23}, "signal_logic": {}, "genome": {}}, {"strategy_id": "25f6abd6-6ba", "rank": 3, "category": "swing", "composite_score": 0.3036716, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "25f6abd6-6ba", "net_profit": 15640.830295194188, "net_profit_pct": 15.100285354268744, "cagr": 1.8368, "sharpe": 1.42, "sortino": 407164188816309.94, "calmar": 0.3908, "profit_factor": 1.968, "max_drawdown": 4968.63, "max_drawdown_pct": 4.7004, "win_rate": 0.2973, "total_trades": 37, "winning_trades": 11, "losing_trades": 26, "avg_trade_pct": 0.4081, "avg_win_pct": 2.7909, "avg_loss_pct": -0.6, "recovery_factor": 3.1479, "expectancy": 0.4081, "ulcer_index": 1.8574, "avg_hold_bars": 22.57, "max_consecutive_wins": 2, "max_consecutive_losses": 8}, "validation": {"strategy_id": "25f6abd6-6ba", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 11.18, "param_stability_decay": 0.0, "stress_test_score": 65.22, "stress_max_drawdown": 0.0, "robustness_score": 25.47}, "signal_logic": {}, "genome": {}}, {"strategy_id": "b192bfc1-62d", "rank": 5, "category": "swing", "composite_score": 0.2575348, "pareto_front": 0, "winner_categories": ["best_overall", "best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "b192bfc1-62d", "net_profit": 3276.600000000006, "net_profit_pct": 3.2999999999999963, "cagr": 0.4046, "sharpe": 0.7333, "sortino": 0.0, "calmar": 0.6744, "profit_factor": 6.5, "max_drawdown": 623.4, "max_drawdown_pct": 0.6, "win_rate": 0.5, "total_trades": 2, "winning_trades": 1, "losing_trades": 1, "avg_trade_pct": 1.65, "avg_win_pct": 3.9, "avg_loss_pct": -0.6, "recovery_factor": 5.256, "expectancy": 1.65, "ulcer_index": 0.1422, "avg_hold_bars": 10.0, "max_consecutive_wins": 1, "max_consecutive_losses": 1}, "validation": {"strategy_id": "b192bfc1-62d", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "0ed14c6e-b3f", "rank": 6, "category": "conservative", "composite_score": 0.23804, "pareto_front": 0, "winner_categories": ["best_overall", "best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "0ed14c6e-b3f", "net_profit": 638.6130488305353, "net_profit_pct": 0.6386130488305293, "cagr": 0.0798, "sharpe": 0.0, "sortino": 0.0, "calmar": 0.0, "profit_factor": 638.613, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 1, "winning_trades": 1, "losing_trades": 0, "avg_trade_pct": 0.6386, "avg_win_pct": 0.6386, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 0.6386, "ulcer_index": 0.0, "avg_hold_bars": 75.0, "max_consecutive_wins": 1, "max_consecutive_losses": 0}, "validation": {"strategy_id": "0ed14c6e-b3f", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "672f341d-be6", "rank": 7, "category": "swing", "composite_score": 0.2268636, "pareto_front": 0, "winner_categories": ["best_overall", "best_sharpe"], "backtest": {"strategy_id": "672f341d-be6", "net_profit": 19947.723335571587, "net_profit_pct": 18.76429074449979, "cagr": 2.3042, "sharpe": 1.7828, "sortino": 496644262485728.44, "calmar": 0.4902, "profit_factor": 2.3597, "max_drawdown": 5113.34, "max_drawdown_pct": 4.7004, "win_rate": 0.3429, "total_trades": 35, "winning_trades": 12, "losing_trades": 23, "avg_trade_pct": 0.5361, "avg_win_pct": 2.7137, "avg_loss_pct": -0.6, "recovery_factor": 3.9011, "expectancy": 0.5361, "ulcer_index": 1.5377, "avg_hold_bars": 26.0, "max_consecutive_wins": 2, "max_consecutive_losses": 8}, "validation": {"strategy_id": "672f341d-be6", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "00e3d01b-e91", "rank": 8, "category": "swing", "composite_score": 0.221026, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "00e3d01b-e91", "net_profit": 18515.887604760588, "net_profit_pct": 17.561990372409593, "cagr": 2.1505, "sharpe": 1.6578, "sortino": 33.1067, "calmar": 0.5015, "profit_factor": 2.2054, "max_drawdown": 4587.94, "max_drawdown_pct": 4.2879, "win_rate": 0.3421, "total_trades": 38, "winning_trades": 13, "losing_trades": 25, "avg_trade_pct": 0.4622, "avg_win_pct": 2.4717, "avg_loss_pct": -0.5828, "recovery_factor": 4.0358, "expectancy": 0.4622, "ulcer_index": 1.6061, "avg_hold_bars": 22.71, "max_consecutive_wins": 2, "max_consecutive_losses": 8}, "validation": {"strategy_id": "00e3d01b-e91", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "134eb134-f25", "rank": 9, "category": "swing", "composite_score": 0.2202935999999999, "pareto_front": 0, "winner_categories": ["best_overall", "best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "134eb134-f25", "net_profit": 8998.659191191851, "net_profit_pct": 8.87781559469711, "cagr": 1.0851, "sharpe": 1.2356, "sortino": 369134851264195.5, "calmar": 0.6272, "profit_factor": 2.5307, "max_drawdown": 1868.38, "max_drawdown_pct": 1.7299, "win_rate": 0.3333, "total_trades": 15, "winning_trades": 5, "losing_trades": 10, "avg_trade_pct": 0.5919, "avg_win_pct": 2.9356, "avg_loss_pct": -0.58, "recovery_factor": 4.8163, "expectancy": 0.5919, "ulcer_index": 0.7492, "avg_hold_bars": 31.2, "max_consecutive_wins": 1, "max_consecutive_losses": 3}, "validation": {"strategy_id": "134eb134-f25", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "6ac596a8-694", "rank": 10, "category": "swing", "composite_score": 0.2197316, "pareto_front": 0, "winner_categories": ["best_overall", "best_sharpe", "best_cagr"], "backtest": {"strategy_id": "6ac596a8-694", "net_profit": 21867.4808779358, "net_profit_pct": 20.50028535426874, "cagr": 2.5079, "sharpe": 1.723, "sortino": 498038235173207.9, "calmar": 0.4757, "profit_factor": 2.1389, "max_drawdown": 5790.41, "max_drawdown_pct": 5.2722, "win_rate": 0.3023, "total_trades": 43, "winning_trades": 13, "losing_trades": 30, "avg_trade_pct": 0.4768, "avg_win_pct": 2.9616, "avg_loss_pct": -0.6, "recovery_factor": 3.7765, "expectancy": 0.4768, "ulcer_index": 1.8112, "avg_hold_bars": 23.33, "max_consecutive_wins": 2, "max_consecutive_losses": 9}, "validation": {"strategy_id": "6ac596a8-694", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "e45ebb08-66c", "rank": 11, "category": "swing", "composite_score": 0.2197316, "pareto_front": 0, "winner_categories": ["best_sharpe", "best_cagr"], "backtest": {"strategy_id": "e45ebb08-66c", "net_profit": 21867.4808779358, "net_profit_pct": 20.50028535426874, "cagr": 2.5079, "sharpe": 1.723, "sortino": 498038235173207.9, "calmar": 0.4757, "profit_factor": 2.1389, "max_drawdown": 5790.41, "max_drawdown_pct": 5.2722, "win_rate": 0.3023, "total_trades": 43, "winning_trades": 13, "losing_trades": 30, "avg_trade_pct": 0.4768, "avg_win_pct": 2.9616, "avg_loss_pct": -0.6, "recovery_factor": 3.7765, "expectancy": 0.4768, "ulcer_index": 1.8112, "avg_hold_bars": 23.33, "max_consecutive_wins": 2, "max_consecutive_losses": 9}, "validation": {"strategy_id": "e45ebb08-66c", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "d6a8d82a-71b", "rank": 12, "category": "swing", "composite_score": 0.2197316, "pareto_front": 0, "winner_categories": ["best_cagr"], "backtest": {"strategy_id": "d6a8d82a-71b", "net_profit": 21867.4808779358, "net_profit_pct": 20.50028535426874, "cagr": 2.5079, "sharpe": 1.723, "sortino": 498038235173207.9, "calmar": 0.4757, "profit_factor": 2.1389, "max_drawdown": 5790.41, "max_drawdown_pct": 5.2722, "win_rate": 0.3023, "total_trades": 43, "winning_trades": 13, "losing_trades": 30, "avg_trade_pct": 0.4768, "avg_win_pct": 2.9616, "avg_loss_pct": -0.6, "recovery_factor": 3.7765, "expectancy": 0.4768, "ulcer_index": 1.8112, "avg_hold_bars": 23.33, "max_consecutive_wins": 2, "max_consecutive_losses": 9}, "validation": {"strategy_id": "d6a8d82a-71b", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}]}, {"run_id": "run_6eac9c2b", "name": "Default Research", "description": "Default configuration for quick testing", "symbols": ["SBIN"], "timeframes": ["15m", "1h"], "start_date": "2026-01-01", "end_date": "2026-06-25", "config": {"cost_model": {"commission_pct": 0.03, "min_commission": 20.0, "slippage_pct": 0.02}, "data": {"end_date": "2026-06-25", "openalgo": {"api_key": "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d", "host": "http://127.0.0.1:5000", "source": "db"}, "start_date": "2026-01-01", "symbols": [{"exchange": "NSE", "symbol": "SBIN"}], "test_pct": 0.15, "timeframes": ["15m", "1h"], "train_pct": 0.7, "validation_pct": 0.15}, "description": "Default configuration for quick testing", "evolution": {"crossover_rate": 0.5, "elitism_pct": 0.1, "enabled": true, "generations": 3, "mutation_rate": 0.3, "population_size": 100, "tournament_size": 3}, "execution": {"chunk_size": 100, "max_workers": null, "memory_limit_gb": 8.0}, "filters": {"backtest": {"max_drawdown": 0.3, "min_cagr": 0.0, "min_profit_factor": 1.2, "min_sharpe": 0.8, "min_trades": 20, "min_win_rate": 0.0}, "fast_reject": {"max_complexity": 4, "min_indicators": 1}, "validation": {"max_oos_sharpe_decay": 0.4, "min_walk_forward_consistency": 0.6, "monte_carlo_confidence": 0.95, "param_stability_tolerance": 0.25}}, "generation": {"allow_short": false, "indicator_categories": ["trend", "momentum"], "max_conditions_per_entry": 3, "mode": "random", "multi_timeframe": false, "target_count": 10000}, "name": "Default Research", "output": {"base_dir": "./data/runs", "export_dir": "./data/exports", "save_all_candidates": true, "storage": "csv"}, "ranking": {"export_per_category": 3, "export_top_n": 10, "mode": "robustness_first", "objectives": [{"direction": "maximize", "metric": "sharpe", "weight": 0.35}, {"direction": "maximize", "metric": "profit_factor", "weight": 0.25}, {"direction": "minimize", "metric": "max_drawdown_pct", "weight": 0.25}, {"direction": "maximize", "metric": "cagr", "weight": 0.15}]}, "style_overrides": {"btst": {"forced_exit_time": null, "max_hold_bars": 150, "min_hold_bars": 50, "min_trades": 30, "product_type": "CNC"}, "intraday": {"forced_exit_time": "15:15", "max_hold_bars": 75, "min_hold_bars": null, "min_trades": 200, "product_type": "MIS"}, "positional": {"forced_exit_time": null, "max_hold_bars": null, "min_hold_bars": 5, "min_trades": 20, "product_type": "CNC"}, "swing": {"forced_exit_time": null, "max_hold_bars": 360, "min_hold_bars": 10, "min_trades": 30, "product_type": "CNC"}}, "trading_styles": ["intraday", "swing"]}, "stats": {"generated": 10000, "backtested": 0, "rejected": 15, "winners": 0, "survivors": 0, "fast_rejections": 15, "backtest_rejections": 0, "validation_rejections": 0}, "rejections": {"stages": {"fast_reject": 15}, "reasons": {"contradictory_conditions": 5, "redundant_conditions": 10}}, "winners": []}, {"run_id": "run_cbd195eb", "name": "Default Research", "description": "Default configuration for quick testing", "symbols": ["SBIN"], "timeframes": ["15m", "1h"], "start_date": "2026-01-01", "end_date": "2026-06-25", "config": {"cost_model": {"commission_pct": 0.03, "min_commission": 20.0, "slippage_pct": 0.02}, "data": {"end_date": "2026-06-25", "openalgo": {"api_key": "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d", "host": "http://127.0.0.1:5000", "source": "db"}, "start_date": "2026-01-01", "symbols": [{"exchange": "NSE", "symbol": "SBIN"}], "test_pct": 0.15, "timeframes": ["15m", "1h"], "train_pct": 0.7, "validation_pct": 0.15}, "description": "Default configuration for quick testing", "evolution": {"crossover_rate": 0.5, "elitism_pct": 0.1, "enabled": true, "generations": 3, "mutation_rate": 0.3, "population_size": 100, "tournament_size": 3}, "execution": {"chunk_size": 100, "max_workers": null, "memory_limit_gb": 8.0}, "filters": {"backtest": {"max_drawdown": 0.3, "min_cagr": 0.0, "min_profit_factor": 1.2, "min_sharpe": 0.8, "min_trades": 20, "min_win_rate": 0.0}, "fast_reject": {"max_complexity": 4, "min_indicators": 1}, "validation": {"max_oos_sharpe_decay": 0.4, "min_walk_forward_consistency": 0.6, "monte_carlo_confidence": 0.95, "param_stability_tolerance": 0.25}}, "generation": {"allow_short": false, "indicator_categories": ["trend", "momentum"], "max_conditions_per_entry": 3, "mode": "random", "multi_timeframe": false, "target_count": 100}, "name": "Default Research", "output": {"base_dir": "./data/runs", "export_dir": "./data/exports", "save_all_candidates": true, "storage": "csv"}, "ranking": {"export_per_category": 3, "export_top_n": 10, "mode": "robustness_first", "objectives": [{"direction": "maximize", "metric": "sharpe", "weight": 0.35}, {"direction": "maximize", "metric": "profit_factor", "weight": 0.25}, {"direction": "minimize", "metric": "max_drawdown_pct", "weight": 0.25}, {"direction": "maximize", "metric": "cagr", "weight": 0.15}]}, "style_overrides": {"btst": {"forced_exit_time": null, "max_hold_bars": 150, "min_hold_bars": 50, "min_trades": 30, "product_type": "CNC"}, "intraday": {"forced_exit_time": "15:15", "max_hold_bars": 75, "min_hold_bars": null, "min_trades": 200, "product_type": "MIS"}, "positional": {"forced_exit_time": null, "max_hold_bars": null, "min_hold_bars": 5, "min_trades": 20, "product_type": "CNC"}, "swing": {"forced_exit_time": null, "max_hold_bars": 360, "min_hold_bars": 10, "min_trades": 30, "product_type": "CNC"}}, "trading_styles": ["intraday"]}, "stats": {"generated": 100, "backtested": 49, "rejected": 94, "winners": 16, "survivors": 56, "fast_rejections": 1, "backtest_rejections": 93, "validation_rejections": 0}, "rejections": {"stages": {"fast_reject": 1, "backtest_filter": 93}, "reasons": {"redundant_conditions": 1, "no_backtest_result": 50, "sharpe_below_min": 29, "total_trades_below_min": 14}}, "winners": [{"strategy_id": "55118811-ee3", "rank": 1, "category": "balanced", "composite_score": 0.3909634, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "55118811-ee3", "net_profit": 14028.766796511365, "net_profit_pct": 14.7771242934784, "cagr": 1.6579, "sharpe": 0.8035, "sortino": 1.5829, "calmar": 0.1092, "profit_factor": 1.4686, "max_drawdown": 18632.0, "max_drawdown_pct": 15.1832, "win_rate": 0.5926, "total_trades": 27, "winning_trades": 16, "losing_trades": 11, "avg_trade_pct": 0.5473, "avg_win_pct": 2.8946, "avg_loss_pct": -2.867, "recovery_factor": 0.7529, "expectancy": 0.5473, "ulcer_index": 7.5261, "avg_hold_bars": 69.11, "max_consecutive_wins": 5, "max_consecutive_losses": 5}, "validation": {"strategy_id": "55118811-ee3", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 97.97, "param_stability_decay": 0.0, "stress_test_score": 69.73, "stress_max_drawdown": 0.0, "robustness_score": 55.9}, "signal_logic": {}, "genome": {}}, {"strategy_id": "338a5ab9-223", "rank": 2, "category": "swing", "composite_score": 0.3882888, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "338a5ab9-223", "net_profit": 13782.819474304793, "net_profit_pct": 13.479811027704624, "cagr": 1.6304, "sharpe": 1.2657, "sortino": 4.1139, "calmar": 0.2799, "profit_factor": 1.8459, "max_drawdown": 6803.24, "max_drawdown_pct": 5.8251, "win_rate": 0.4483, "total_trades": 29, "winning_trades": 13, "losing_trades": 16, "avg_trade_pct": 0.4648, "avg_win_pct": 2.2627, "avg_loss_pct": -0.996, "recovery_factor": 2.0259, "expectancy": 0.4648, "ulcer_index": 2.4485, "avg_hold_bars": 39.62, "max_consecutive_wins": 3, "max_consecutive_losses": 3}, "validation": {"strategy_id": "338a5ab9-223", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 79.62, "param_stability_decay": 0.0, "stress_test_score": 57.78, "stress_max_drawdown": 0.0, "robustness_score": 45.8}, "signal_logic": {}, "genome": {}}, {"strategy_id": "c9c26297-c25", "rank": 3, "category": "swing", "composite_score": 0.3861372, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "c9c26297-c25", "net_profit": 14548.981345884866, "net_profit_pct": 14.485661742265947, "cagr": 1.7158, "sharpe": 1.0744, "sortino": 3.0451, "calmar": 0.159, "profit_factor": 1.5314, "max_drawdown": 13026.7, "max_drawdown_pct": 10.789, "win_rate": 0.5143, "total_trades": 35, "winning_trades": 18, "losing_trades": 17, "avg_trade_pct": 0.4139, "avg_win_pct": 2.3192, "avg_loss_pct": -1.6035, "recovery_factor": 1.1169, "expectancy": 0.4139, "ulcer_index": 5.0022, "avg_hold_bars": 46.09, "max_consecutive_wins": 7, "max_consecutive_losses": 6}, "validation": {"strategy_id": "c9c26297-c25", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 81.26, "param_stability_decay": 0.0, "stress_test_score": 71.88, "stress_max_drawdown": 0.0, "robustness_score": 51.05}, "signal_logic": {}, "genome": {}}, {"strategy_id": "43bfc6f9-611", "rank": 4, "category": "swing", "composite_score": 0.3828652, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "43bfc6f9-611", "net_profit": 16767.173641250352, "net_profit_pct": 16.330238140561363, "cagr": 1.9605, "sharpe": 1.2658, "sortino": 4.6112, "calmar": 0.277, "profit_factor": 1.5093, "max_drawdown": 7412.62, "max_drawdown_pct": 7.0788, "win_rate": 0.4833, "total_trades": 60, "winning_trades": 29, "losing_trades": 31, "avg_trade_pct": 0.2722, "avg_win_pct": 1.6688, "avg_loss_pct": -1.0343, "recovery_factor": 2.262, "expectancy": 0.2722, "ulcer_index": 2.2262, "avg_hold_bars": 22.38, "max_consecutive_wins": 6, "max_consecutive_losses": 7}, "validation": {"strategy_id": "43bfc6f9-611", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 78.98, "param_stability_decay": 0.0, "stress_test_score": 61.62, "stress_max_drawdown": 0.0, "robustness_score": 46.87}, "signal_logic": {}, "genome": {}}, {"strategy_id": "c3033c46-639", "rank": 5, "category": "balanced", "composite_score": 0.3783322, "pareto_front": 0, "winner_categories": ["best_overall", "best_robust"], "backtest": {"strategy_id": "c3033c46-639", "net_profit": 14334.968591408513, "net_profit_pct": 14.901448840254341, "cagr": 1.692, "sharpe": 0.8501, "sortino": 1.6278, "calmar": 0.1298, "profit_factor": 1.5159, "max_drawdown": 15249.02, "max_drawdown_pct": 13.0388, "win_rate": 0.6667, "total_trades": 27, "winning_trades": 18, "losing_trades": 9, "avg_trade_pct": 0.5519, "avg_win_pct": 2.4326, "avg_loss_pct": -3.2096, "recovery_factor": 0.9401, "expectancy": 0.5519, "ulcer_index": 6.1867, "avg_hold_bars": 67.37, "max_consecutive_wins": 6, "max_consecutive_losses": 5}, "validation": {"strategy_id": "c3033c46-639", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 79.45, "param_stability_decay": 0.0, "stress_test_score": 76.89, "stress_max_drawdown": 0.0, "robustness_score": 52.11}, "signal_logic": {}, "genome": {}}, {"strategy_id": "5b76be6a-900", "rank": 6, "category": "swing", "composite_score": 0.3331056, "pareto_front": 0, "winner_categories": ["best_overall", "best_sharpe", "best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "5b76be6a-900", "net_profit": 5931.817042825467, "net_profit_pct": 5.815195956255077, "cagr": 0.7244, "sharpe": 3.3837, "sortino": 3.3837, "calmar": 0.0, "profit_factor": 5815.196, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 4, "winning_trades": 4, "losing_trades": 0, "avg_trade_pct": 1.4538, "avg_win_pct": 1.4538, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 1.4538, "ulcer_index": 0.0, "avg_hold_bars": 35.25, "max_consecutive_wins": 4, "max_consecutive_losses": 0}, "validation": {"strategy_id": "5b76be6a-900", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "326677a9-547", "rank": 7, "category": "swing", "composite_score": 0.3214983999999999, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "326677a9-547", "net_profit": 12026.07944400997, "net_profit_pct": 11.908575607972216, "cagr": 1.4325, "sharpe": 1.1295, "sortino": 24.488, "calmar": 0.2919, "profit_factor": 1.3346, "max_drawdown": 5557.68, "max_drawdown_pct": 4.908, "win_rate": 0.2941, "total_trades": 85, "winning_trades": 25, "losing_trades": 60, "avg_trade_pct": 0.1401, "avg_win_pct": 1.9, "avg_loss_pct": -0.5932, "recovery_factor": 2.1639, "expectancy": 0.1401, "ulcer_index": 2.015, "avg_hold_bars": 16.56, "max_consecutive_wins": 3, "max_consecutive_losses": 7}, "validation": {"strategy_id": "326677a9-547", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0.0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 89.52, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 29.84}, "signal_logic": {}, "genome": {}}, {"strategy_id": "a8206aa9-ba8", "rank": 8, "category": "conservative", "composite_score": 0.3095308, "pareto_front": 0, "winner_categories": ["best_overall", "best_sharpe"], "backtest": {"strategy_id": "a8206aa9-ba8", "net_profit": 16413.83210208612, "net_profit_pct": 15.497684366003877, "cagr": 1.9218, "sharpe": 2.5716, "sortino": 0.0, "calmar": 2.6787, "profit_factor": 22.6019, "max_drawdown": 717.42, "max_drawdown_pct": 0.7174, "win_rate": 0.875, "total_trades": 8, "winning_trades": 7, "losing_trades": 1, "avg_trade_pct": 1.9372, "avg_win_pct": 2.3164, "avg_loss_pct": -0.7174, "recovery_factor": 22.8789, "expectancy": 1.9372, "ulcer_index": 0.2128, "avg_hold_bars": 51.75, "max_consecutive_wins": 7, "max_consecutive_losses": 1}, "validation": {"strategy_id": "a8206aa9-ba8", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "b694c8cb-24e", "rank": 9, "category": "swing", "composite_score": 0.2995376, "pareto_front": 0, "winner_categories": ["best_overall", "best_sharpe"], "backtest": {"strategy_id": "b694c8cb-24e", "net_profit": 11209.089142509256, "net_profit_pct": 10.804239236707454, "cagr": 1.3396, "sharpe": 2.2276, "sortino": 0.0, "calmar": 1.7805, "profit_factor": 15.3606, "max_drawdown": 843.03, "max_drawdown_pct": 0.7524, "win_rate": 0.8571, "total_trades": 7, "winning_trades": 6, "losing_trades": 1, "avg_trade_pct": 1.5435, "avg_win_pct": 1.9261, "avg_loss_pct": -0.7524, "recovery_factor": 13.2962, "expectancy": 1.5435, "ulcer_index": 0.2699, "avg_hold_bars": 30.14, "max_consecutive_wins": 6, "max_consecutive_losses": 1}, "validation": {"strategy_id": "b694c8cb-24e", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "437a5a33-f3f", "rank": 10, "category": "conservative", "composite_score": 0.2913876, "pareto_front": 0, "winner_categories": ["best_overall"], "backtest": {"strategy_id": "437a5a33-f3f", "net_profit": 10961.814508878291, "net_profit_pct": 10.652678511250205, "cagr": 1.3113, "sharpe": 1.8995, "sortino": 0.0, "calmar": 5.7742, "profit_factor": 47.9079, "max_drawdown": 242.87, "max_drawdown_pct": 0.2271, "win_rate": 0.75, "total_trades": 4, "winning_trades": 3, "losing_trades": 1, "avg_trade_pct": 2.6632, "avg_win_pct": 3.6266, "avg_loss_pct": -0.2271, "recovery_factor": 45.1337, "expectancy": 2.6632, "ulcer_index": 0.0552, "avg_hold_bars": 54.0, "max_consecutive_wins": 2, "max_consecutive_losses": 1}, "validation": {"strategy_id": "437a5a33-f3f", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "20f6b787-4a6", "rank": 14, "category": "conservative", "composite_score": 0.2899808, "pareto_front": 0, "winner_categories": ["lowest_drawdown"], "backtest": {"strategy_id": "20f6b787-4a6", "net_profit": 2648.234151136392, "net_profit_pct": 2.6359358916700995, "cagr": 0.3279, "sharpe": 1.8506, "sortino": 1.8506, "calmar": 0.0, "profit_factor": 2635.9359, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 2, "winning_trades": 2, "losing_trades": 0, "avg_trade_pct": 1.318, "avg_win_pct": 1.318, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 1.318, "ulcer_index": 0.0, "avg_hold_bars": 51.0, "max_consecutive_wins": 2, "max_consecutive_losses": 0}, "validation": {"strategy_id": "20f6b787-4a6", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "0895f70a-d71", "rank": 20, "category": "swing", "composite_score": 0.2816624, "pareto_front": 0, "winner_categories": ["best_profit_factor", "lowest_drawdown"], "backtest": {"strategy_id": "0895f70a-d71", "net_profit": 5527.35251002216, "net_profit_pct": 5.483578637881195, "cagr": 0.6761, "sharpe": 1.5473, "sortino": 1.5473, "calmar": 0.0, "profit_factor": 5483.5786, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 2, "winning_trades": 2, "losing_trades": 0, "avg_trade_pct": 2.7418, "avg_win_pct": 2.7418, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 2.7418, "ulcer_index": 0.0, "avg_hold_bars": 38.5, "max_consecutive_wins": 2, "max_consecutive_losses": 0}, "validation": {"strategy_id": "0895f70a-d71", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "95cf705c-76e", "rank": 22, "category": "conservative", "composite_score": 0.2811856, "pareto_front": 0, "winner_categories": ["best_profit_factor"], "backtest": {"strategy_id": "95cf705c-76e", "net_profit": 6644.238623061014, "net_profit_pct": 6.562134805186795, "cagr": 0.809, "sharpe": 1.5279, "sortino": 1.5279, "calmar": 0.0, "profit_factor": 6562.1348, "max_drawdown": 0.0, "max_drawdown_pct": 0.0, "win_rate": 1.0, "total_trades": 3, "winning_trades": 3, "losing_trades": 0, "avg_trade_pct": 2.1874, "avg_win_pct": 2.1874, "avg_loss_pct": 0.0, "recovery_factor": 0.0, "expectancy": 2.1874, "ulcer_index": 0.0, "avg_hold_bars": 50.33, "max_consecutive_wins": 3, "max_consecutive_losses": 0}, "validation": {"strategy_id": "95cf705c-76e", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "646ce3a8-7ea", "rank": 35, "category": "swing", "composite_score": 0.2285772, "pareto_front": 0, "winner_categories": ["best_cagr"], "backtest": {"strategy_id": "646ce3a8-7ea", "net_profit": 23805.33092100169, "net_profit_pct": 22.082847036343022, "cagr": 2.7106, "sharpe": 1.8709, "sortino": 6.6573, "calmar": 0.4778, "profit_factor": 2.4092, "max_drawdown": 7068.38, "max_drawdown_pct": 5.6736, "win_rate": 0.4571, "total_trades": 35, "winning_trades": 16, "losing_trades": 19, "avg_trade_pct": 0.6309, "avg_win_pct": 2.3596, "avg_loss_pct": -0.8248, "recovery_factor": 3.3679, "expectancy": 0.6309, "ulcer_index": 2.1551, "avg_hold_bars": 35.97, "max_consecutive_wins": 5, "max_consecutive_losses": 4}, "validation": {"strategy_id": "646ce3a8-7ea", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "8236aee0-6c1", "rank": 38, "category": "swing", "composite_score": 0.2229696, "pareto_front": 0, "winner_categories": ["best_cagr"], "backtest": {"strategy_id": "8236aee0-6c1", "net_profit": 22852.486479869985, "net_profit_pct": 21.35365997492217, "cagr": 2.6113, "sharpe": 1.7449, "sortino": 6.4363, "calmar": 0.4201, "profit_factor": 2.3619, "max_drawdown": 7653.56, "max_drawdown_pct": 6.2157, "win_rate": 0.5, "total_trades": 34, "winning_trades": 17, "losing_trades": 17, "avg_trade_pct": 0.628, "avg_win_pct": 2.1784, "avg_loss_pct": -0.9223, "recovery_factor": 2.9859, "expectancy": 0.628, "ulcer_index": 2.3215, "avg_hold_bars": 34.26, "max_consecutive_wins": 5, "max_consecutive_losses": 4}, "validation": {"strategy_id": "8236aee0-6c1", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}, {"strategy_id": "2c1237da-3f2", "rank": 40, "category": "swing", "composite_score": 0.2206344, "pareto_front": 0, "winner_categories": ["best_cagr"], "backtest": {"strategy_id": "2c1237da-3f2", "net_profit": 29343.817520102966, "net_profit_pct": 26.84656381461095, "cagr": 3.2752, "sharpe": 1.8206, "sortino": 4.5812, "calmar": 0.4581, "profit_factor": 2.216, "max_drawdown": 9398.31, "max_drawdown_pct": 7.1501, "win_rate": 0.5, "total_trades": 44, "winning_trades": 22, "losing_trades": 22, "avg_trade_pct": 0.6101, "avg_win_pct": 2.2239, "avg_loss_pct": -1.0036, "recovery_factor": 3.1222, "expectancy": 0.6101, "ulcer_index": 3.2834, "avg_hold_bars": 35.09, "max_consecutive_wins": 5, "max_consecutive_losses": 6}, "validation": {"strategy_id": "2c1237da-3f2", "walk_forward_score": 0, "walk_forward_consistency": 0.0, "oos_sharpe": 0.0, "oos_sharpe_decay": 0.0, "oos_profit_factor": 0.0, "monte_carlo_score": 0, "monte_carlo_p5_sharpe": 0.0, "param_stability_score": 0, "param_stability_decay": 0.0, "stress_test_score": 0, "stress_max_drawdown": 0.0, "robustness_score": 0}, "signal_logic": {}, "genome": {}}]}]
+    </script>
+
+    <!-- Main Logic Script -->
+    <script>
+        // Load database
+        const runs = JSON.parse(document.getElementById('runs-database').textContent);
+        let activeRunIndex = 0;
+        let activeTab = 'overview';
+        let currentSortColumn = 'rank';
+        let currentSortAsc = true;
+
+        let rejectionChartInstance = null;
+        let reasonsChartInstance = null;
+
+        // Init App
+        window.addEventListener('DOMContentLoaded', () => {
+            renderRunList();
+            if (runs.length > 0) {
+                selectRun(0);
+            } else {
+                showNoRunsState();
+            }
+        });
+
+        function renderRunList() {
+            const listEl = document.getElementById('run-list');
+            listEl.innerHTML = '';
+
+            runs.forEach((run, index) => {
+                const item = document.createElement('div');
+                item.className = `run-item ${index === activeRunIndex ? 'active' : ''}`;
+                item.onclick = () => selectRun(index);
+
+                const hasWinners = run.stats.winners > 0;
+                const badgeText = hasWinners ? `${run.stats.winners} Winners` : '0 Winners';
+                const badgeClass = hasWinners ? 'badge-winners' : 'badge-zero';
+
+                item.innerHTML = `
+                    <div class="run-item-name">${run.name}</div>
+                    <div class="run-item-meta">
+                        <span class="run-item-id">${run.run_id}</span>
+                        <span class="badge ${badgeClass}">${badgeText}</span>
+                    </div>
+                `;
+                listEl.appendChild(item);
+            });
+        }
+
+        function selectRun(index) {
+            // Update active state in sidebar
+            const items = document.querySelectorAll('.run-item');
+            items.forEach((item, idx) => {
+                if (idx === index) item.classList.add('active');
+                else item.classList.remove('active');
+            });
+
+            activeRunIndex = index;
+            const run = runs[index];
+
+            // Render active run info
+            document.getElementById('active-run-name').textContent = run.name;
+            document.getElementById('active-run-desc').textContent = run.description || 'No description provided.';
+
+            // Header meta tags
+            const metaEl = document.getElementById('active-run-meta');
+            metaEl.innerHTML = `
+                <div class="meta-tag">Run ID: <strong>${run.run_id}</strong></div>
+                <div class="meta-tag">Symbols: <strong>${run.symbols.join(', ') || 'N/A'}</strong></div>
+                <div class="meta-tag">Timeframes: <strong>${run.timeframes.join(', ') || 'N/A'}</strong></div>
+                <div class="meta-tag">Period: <strong>${run.start_date} to ${run.end_date}</strong></div>
+            `;
+
+            // Reset selected strategy in detail view
+            document.getElementById('detail-empty-state').style.display = 'flex';
+            document.getElementById('detail-content').style.display = 'none';
+
+            // Refresh currently visible tab content
+            refreshActiveTab();
+        }
+
+        function switchTab(tabId) {
+            activeTab = tabId;
+
+            // Toggle active button
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => {
+                if (btn.textContent.toLowerCase().includes(tabId)) btn.classList.add('active');
+                else btn.classList.remove('active');
+            });
+
+            // Toggle active content
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => {
+                if (content.id === `tab-${tabId}`) content.classList.add('active');
+                else content.classList.remove('active');
+            });
+
+            refreshActiveTab();
+        }
+
+        function refreshActiveTab() {
+            const run = runs[activeRunIndex];
+            if (!run) return;
+
+            if (activeTab === 'overview') {
+                renderOverviewTab(run);
+            } else if (activeTab === 'winners') {
+                renderWinnersTab(run);
+            } else if (activeTab === 'rejections') {
+                renderRejectionsTab(run);
+            } else if (activeTab === 'config') {
+                renderConfigTab(run);
+            }
+        }
+
+        function renderOverviewTab(run) {
+            // 1. Stats Grid
+            const statsGrid = document.getElementById('overview-stats-grid');
+
+            const fastRejectPct = run.stats.generated > 0
+                ? ((run.stats.fast_rejections / run.stats.generated) * 100).toFixed(1)
+                : '0.0';
+
+            const conversionPct = run.stats.generated > 0
+                ? ((run.stats.winners / run.stats.generated) * 100).toFixed(2)
+                : '0.00';
+
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-label">Total Generated</div>
+                    <div class="stat-value">${run.stats.generated.toLocaleString()}</div>
+                    <div class="stat-sub">Grammar-based candidates</div>
+                </div>
+                <div class="stat-card" style="--card-color: var(--danger)">
+                    <div class="stat-label">Fast Rejected</div>
+                    <div class="stat-value">${run.stats.fast_rejections.toLocaleString()}</div>
+                    <div class="stat-sub">${fastRejectPct}% filters failed early</div>
+                </div>
+                <div class="stat-card" style="--card-color: var(--warning)">
+                    <div class="stat-label">Backtested</div>
+                    <div class="stat-value">${run.stats.backtested.toLocaleString()}</div>
+                    <div class="stat-sub">${run.stats.backtest_rejections.toLocaleString()} rejected by metrics</div>
+                </div>
+                <div class="stat-card" style="--card-color: var(--success)">
+                    <div class="stat-label">Ultimate Winners</div>
+                    <div class="stat-value">${run.stats.winners}</div>
+                    <div class="stat-sub">${conversionPct}% success rate</div>
+                </div>
+            `;
+
+            // 2. Funnel
+            const funnel = document.getElementById('discovery-funnel');
+            const total = run.stats.generated || 1;
+            const fastPassed = total - run.stats.fast_rejections;
+            const btPassed = run.stats.backtested - run.stats.backtest_rejections;
+
+            funnel.innerHTML = `
+                <div class="funnel-step">
+                    <div class="funnel-step-info">
+                        <div class="funnel-step-name">1. Generation Stage</div>
+                        <div class="funnel-step-sub">Synthesized candidate strategy space</div>
+                    </div>
+                    <div class="funnel-step-value">${run.stats.generated.toLocaleString()}</div>
+                    <div class="funnel-step-pct">100%</div>
+                </div>
+                <div class="funnel-step">
+                    <div class="funnel-step-info">
+                        <div class="funnel-step-name">2. Fast Rejection Pipeline</div>
+                        <div class="funnel-step-sub">Eliminated structural and rule contradictions</div>
+                    </div>
+                    <div class="funnel-step-value">${fastPassed.toLocaleString()}</div>
+                    <div class="funnel-step-pct">${((fastPassed/total)*100).toFixed(1)}%</div>
+                </div>
+                <div class="funnel-step">
+                    <div class="funnel-step-info">
+                        <div class="funnel-step-name">3. Vectorized Backtesting</div>
+                        <div class="funnel-step-sub">Simulated trading performance on training data</div>
+                    </div>
+                    <div class="funnel-step-value">${run.stats.backtested.toLocaleString()}</div>
+                    <div class="funnel-step-pct">${((run.stats.backtested/total)*100).toFixed(1)}%</div>
+                </div>
+                <div class="funnel-step">
+                    <div class="funnel-step-info">
+                        <div class="funnel-step-name">4. Multi-Objective Filtering</div>
+                        <div class="funnel-step-sub">Checked minimum Sharpe, Trades, and Drawdown thresholds</div>
+                    </div>
+                    <div class="funnel-step-value">${btPassed.toLocaleString()}</div>
+                    <div class="funnel-step-pct">${((btPassed/total)*100).toFixed(1)}%</div>
+                </div>
+                <div class="funnel-step">
+                    <div class="funnel-step-info">
+                        <div class="funnel-step-name">5. Walkforward & Robustness Validation</div>
+                        <div class="funnel-step-sub">Passed out-of-sample, Monte Carlo, and parameter stability</div>
+                    </div>
+                    <div class="funnel-step-value">${run.stats.winners}</div>
+                    <div class="funnel-step-pct">${conversionPct}%</div>
+                </div>
+            `;
+
+            // 3. Rejection Stage Chart
+            setTimeout(() => {
+                const ctx = document.getElementById('rejectionStageChart').getContext('2d');
+                if (rejectionChartInstance) rejectionChartInstance.destroy();
+
+                rejectionChartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Survived', 'Fast Rejected', 'Backtest Filtered', 'Validation Rejected'],
+                        datasets: [{
+                            data: [
+                                run.stats.winners,
+                                run.stats.fast_rejections,
+                                run.stats.backtest_rejections,
+                                run.stats.validation_rejections
+                            ],
+                            backgroundColor: ['#10b981', '#ef4444', '#f59e0b', '#8b5cf6'],
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    color: '#9ca3af',
+                                    font: { family: 'Inter', size: 11 }
+                                }
+                            }
+                        }
+                    }
+                });
+            }, 50);
+        }
+
+        function renderWinnersTab(run) {
+            renderWinnersTable(run.winners);
+        }
+
+        function renderWinnersTable(winners) {
+            const tableBody = document.getElementById('winners-table-body');
+            tableBody.innerHTML = '';
+
+            if (winners.length === 0) {
+                tableBody.innerHTML = `
+                    <tr>
+                        <td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                            No winning strategies survived the validation pipeline for this run.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            winners.forEach(w => {
+                const tr = document.createElement('tr');
+                tr.id = `strat-row-${w.strategy_id}`;
+                tr.onclick = () => selectStrategy(w.strategy_id);
+
+                const cagrVal = w.backtest.cagr;
+                const sharpeVal = w.backtest.sharpe;
+                const ddVal = w.backtest.max_drawdown_pct;
+                const winRateVal = w.backtest.win_rate;
+
+                tr.innerHTML = `
+                    <td><strong>${w.rank}</strong></td>
+                    <td class="strategy-id-cell">${w.strategy_id}</td>
+                    <td><span class="badge" style="background-color: rgba(255,255,255,0.05); color:#fff; border:1px solid rgba(255,255,255,0.1);">${w.category.toUpperCase()}</span></td>
+                    <td class="${cagrVal >= 0 ? 'metric-up' : 'metric-down'}">${cagrVal ? cagrVal.toFixed(2) + '%' : '0.00%'}</td>
+                    <td class="${sharpeVal >= 0.8 ? 'metric-up' : ''}">${sharpeVal ? sharpeVal.toFixed(2) : '0.00'}</td>
+                    <td class="metric-down">${ddVal ? ddVal.toFixed(2) + '%' : '0.00%'}</td>
+                    <td>${winRateVal ? (winRateVal * 100).toFixed(1) + '%' : '0.0%'}</td>
+                    <td style="font-weight:600; color:#fff;">${w.composite_score.toFixed(4)}</td>
+                `;
+                tableBody.appendChild(tr);
+            });
+        }
+
+        function filterWinnersTable() {
+            const run = runs[activeRunIndex];
+            if (!run) return;
+
+            const searchQuery = document.getElementById('strategy-search').value.toLowerCase();
+            const styleFilter = document.getElementById('style-filter').value;
+
+            let filtered = run.winners.filter(w => {
+                const matchesSearch = w.strategy_id.toLowerCase().includes(searchQuery) || w.category.toLowerCase().includes(searchQuery);
+                const matchesStyle = styleFilter === 'all' || w.category.toLowerCase() === styleFilter.toLowerCase();
+                return matchesSearch && matchesStyle;
+            });
+
+            renderWinnersTable(filtered);
+        }
+
+        function sortTable(column) {
+            const run = runs[activeRunIndex];
+            if (!run || run.winners.length === 0) return;
+
+            if (currentSortColumn === column) {
+                currentSortAsc = !currentSortAsc;
+            } else {
+                currentSortColumn = column;
+                currentSortAsc = true;
+            }
+
+            // Update headers class
+            const ths = document.querySelectorAll('#winners-table th');
+            const colMap = {
+                'rank': 0,
+                'strategy_id': 1,
+                'category': 2,
+                'cagr': 3,
+                'sharpe': 4,
+                'max_drawdown_pct': 5,
+                'win_rate': 6,
+                'composite_score': 7
+            };
+
+            ths.forEach((th, index) => {
+                th.className = '';
+                if (index === colMap[column]) {
+                    th.className = currentSortAsc ? 'sort-asc' : 'sort-desc';
+                }
+            });
+
+            const sorted = [...run.winners].sort((a, b) => {
+                let valA, valB;
+
+                if (column === 'rank' || column === 'strategy_id' || column === 'category' || column === 'composite_score') {
+                    valA = a[column];
+                    valB = b[column];
+                } else {
+                    valA = a.backtest[column];
+                    valB = b.backtest[column];
+                }
+
+                if (typeof valA === 'string') {
+                    return currentSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return currentSortAsc ? valA - valB : valB - valA;
+                }
+            });
+
+            renderWinnersTable(sorted);
+        }
+
+        function selectStrategy(strategyId) {
+            const run = runs[activeRunIndex];
+            const w = run.winners.find(item => item.strategy_id === strategyId);
+            if (!w) return;
+
+            // Highlight selected row
+            const rows = document.querySelectorAll('#winners-table-body tr');
+            rows.forEach(r => r.classList.remove('selected'));
+            const selRow = document.getElementById(`strat-row-${strategyId}`);
+            if (selRow) selRow.classList.add('selected');
+
+            document.getElementById('detail-empty-state').style.display = 'none';
+            const detailContent = document.getElementById('detail-content');
+            detailContent.style.display = 'block';
+
+            // Generate Winner badges html
+            const catBadgesHtml = w.winner_categories.map(cat => `<span class="winner-cat-badge">${cat.toUpperCase().replace('_', ' ')}</span>`).join('');
+
+            const bt = w.backtest;
+            const val = w.validation;
+
+            detailContent.innerHTML = `
+                <div class="detail-header-panel">
+                    <div>
+                        <div class="detail-title-id">${w.strategy_id}</div>
+                        <div style="margin-top: 6px; display:flex; flex-wrap:wrap;">
+                            ${catBadgesHtml}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase;">Composite Score</div>
+                        <div style="font-size:1.6rem; font-weight:800; color:var(--accent-primary);">${w.composite_score.toFixed(4)}</div>
+                    </div>
+                </div>
+
+                <!-- KPI Grid -->
+                <div class="metric-grid-3">
+                    <div class="metric-item-box">
+                        <div class="metric-item-title">Annualized Return</div>
+                        <div class="metric-item-value ${bt.cagr >= 0 ? 'metric-up' : 'metric-down'}">${bt.cagr ? bt.cagr.toFixed(1) + '%' : '0.0%'}</div>
+                        <div class="metric-item-sub">CAGR</div>
+                    </div>
+                    <div class="metric-item-box">
+                        <div class="metric-item-title">Sharpe Ratio</div>
+                        <div class="metric-item-value">${bt.sharpe ? bt.sharpe.toFixed(2) : '0.00'}</div>
+                        <div class="metric-item-sub">Risk-Adjusted return</div>
+                    </div>
+                    <div class="metric-item-box">
+                        <div class="metric-item-title">Max Drawdown</div>
+                        <div class="metric-item-value metric-down">${bt.max_drawdown_pct ? bt.max_drawdown_pct.toFixed(1) + '%' : '0.0%'}</div>
+                        <div class="metric-item-sub">Peak-to-trough drop</div>
+                    </div>
+                </div>
+
+                <!-- Section: Backtest Summary -->
+                <div class="detail-sub-section">
+                    <div class="detail-sub-title">Simulation Metrics</div>
+                    <table class="metrics-list-table">
+                        <tr>
+                            <td class="m-label">Net Profit</td>
+                            <td class="m-value ${bt.net_profit_pct >= 0 ? 'metric-up' : 'metric-down'}">${bt.net_profit_pct ? bt.net_profit_pct.toFixed(2) + '%' : '0.00%'} (${bt.net_profit ? bt.net_profit.toLocaleString(undefined, {maximumFractionDigits: 0}) : '0'})</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Profit Factor</td>
+                            <td class="m-value">${bt.profit_factor ? bt.profit_factor.toFixed(2) : '0.00'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Win Rate</td>
+                            <td class="m-value">${bt.win_rate ? (bt.win_rate * 100).toFixed(1) + '%' : '0.0%'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Total Trades</td>
+                            <td class="m-value">${bt.total_trades} (W: ${bt.winning_trades} / L: ${bt.losing_trades})</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Average Trade PnL</td>
+                            <td class="m-value">${bt.avg_trade_pct ? bt.avg_trade_pct.toFixed(2) + '%' : '0.00%'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Recovery Factor</td>
+                            <td class="m-value">${bt.recovery_factor ? bt.recovery_factor.toFixed(2) : '0.00'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Expectancy</td>
+                            <td class="m-value">${bt.expectancy ? bt.expectancy.toFixed(3) : '0.000'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Ulcer Index (DD Depth/Duration)</td>
+                            <td class="m-value">${bt.ulcer_index ? bt.ulcer_index.toFixed(2) : '0.00'}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Section: Validation & Robustness -->
+                <div class="detail-sub-section">
+                    <div class="detail-sub-title">Robustness & Stress Tests</div>
+                    <table class="metrics-list-table">
+                        <tr>
+                            <td class="m-label">Overall Robustness Score</td>
+                            <td class="m-value" style="color: var(--accent-primary); font-weight:700;">${val.robustness_score ? val.robustness_score.toFixed(1) : '0.0'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Parameter Stability Score</td>
+                            <td class="m-value">${val.param_stability_score ? val.param_stability_score.toFixed(1) : '0.0'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Stress Test Score (Noise Resistance)</td>
+                            <td class="m-value">${val.stress_test_score ? val.stress_test_score.toFixed(1) : '0.0'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Out-of-Sample (OOS) Sharpe</td>
+                            <td class="m-value">${val.oos_sharpe ? val.oos_sharpe.toFixed(2) : '0.00'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">OOS Sharpe Decay Ratio</td>
+                            <td class="m-value">${val.oos_sharpe_decay ? (val.oos_sharpe_decay * 100).toFixed(1) + '%' : '0.0%'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Walk Forward Score / Consistency</td>
+                            <td class="m-value">${val.walk_forward_score ? val.walk_forward_score.toFixed(1) : '0.0'} / ${val.walk_forward_consistency ? (val.walk_forward_consistency * 100).toFixed(0) + '%' : '0%'}</td>
+                        </tr>
+                        <tr>
+                            <td class="m-label">Monte Carlo Score</td>
+                            <td class="m-value">${val.monte_carlo_score ? val.monte_carlo_score.toFixed(1) : '0.0'}</td>
+                        </tr>
+                    </table>
+                </div>
+
+                <!-- Section: Strategy Logic & Rules -->
+                <div class="detail-sub-section">
+                    <div class="detail-sub-title">Strategy Rules & Logic</div>
+                    <div style="background: var(--bg-surface-opaque); border: 1px solid var(--accent-glow); border-radius: 6px; padding: 12px; margin-top: 8px;">
+                        <div style="margin-bottom: 12px;">
+                            <span style="font-weight: 700; color: var(--accent-primary); font-size: 0.85rem; text-transform: uppercase;">Entry Long Conditions:</span>
+                            <div style="font-family: monospace; font-size: 0.85rem; padding: 8px; background-color: var(--bg-base); border-radius: 4px; margin-top: 4px; word-break: break-all; color: var(--text-primary); border-left: 3px solid var(--accent-primary);">
+                                ${w.signal_logic && w.signal_logic.entry_long ? w.signal_logic.entry_long : 'No entry conditions recorded.'}
+                            </div>
+                        </div>
+                        <div>
+                            <span style="font-weight: 700; color: var(--text-secondary); font-size: 0.85rem; text-transform: uppercase;">Exit & Risk Parameters:</span>
+                            <div style="font-family: monospace; font-size: 0.85rem; padding: 8px; background-color: var(--bg-base); border-radius: 4px; margin-top: 4px; color: var(--text-primary); border-left: 3px solid var(--text-muted);">
+                                ${w.signal_logic && w.signal_logic.exit_long ?
+                                    `Stop Loss: ${w.signal_logic.exit_long.stop_loss_pct ? w.signal_logic.exit_long.stop_loss_pct + '%' : 'None'} | ` +
+                                    `Take Profit: ${w.signal_logic.exit_long.take_profit_pct ? w.signal_logic.exit_long.take_profit_pct + '%' : 'None'} | ` +
+                                    `Trailing Stop: ${w.signal_logic.exit_long.trailing_stop_pct ? w.signal_logic.exit_long.trailing_stop_pct + '%' : 'None'} | ` +
+                                    `Max Hold Bars: ${w.signal_logic.exit_long.max_hold_bars || 'None'}` : 'No exit parameters recorded.'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRejectionsTab(run) {
+            // 1. Stage progress bar lists
+            const stageProgress = document.getElementById('rejection-stage-progress');
+            stageProgress.innerHTML = '';
+
+            const totalRejections = run.stats.rejected || 1;
+
+            const stages = [
+                { name: 'Fast Rejection (Indicator checks)', count: run.stats.fast_rejections },
+                { name: 'Backtest Filter (Metrics thresholds)', count: run.stats.backtest_rejections },
+                { name: 'Validation Failures (OOS, Stability, WFA)', count: run.stats.validation_rejections }
+            ];
+
+            stages.forEach(st => {
+                const pct = ((st.count / totalRejections) * 100).toFixed(1);
+
+                const item = document.createElement('div');
+                item.className = 'rejection-progress-item';
+                item.innerHTML = `
+                    <div class="rejection-progress-lbl">
+                        <span class="name">${st.name}</span>
+                        <span class="val">${st.count.toLocaleString()} (${pct}%)</span>
+                    </div>
+                    <div class="rejection-track-bar">
+                        <div class="rejection-fill-bar" style="width: ${pct}%; background-color:${st.name.includes('Fast') ? '#ef4444' : st.name.includes('Backtest') ? '#f59e0b' : '#8b5cf6'}"></div>
+                    </div>
+                `;
+                stageProgress.appendChild(item);
+            });
+
+            // 2. Reason progress list
+            const reasonProgress = document.getElementById('rejection-reason-progress');
+            reasonProgress.innerHTML = '';
+
+            const sortedReasons = Object.entries(run.rejections.reasons)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+
+            if (sortedReasons.length === 0) {
+                reasonProgress.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; padding: 20px 0;">No rejection reasons logged for this run.</div>`;
+            } else {
+                sortedReasons.forEach(([reason, count]) => {
+                    const pct = ((count / totalRejections) * 100).toFixed(1);
+                    const readableReason = reason.replace(/_/g, ' ');
+
+                    const item = document.createElement('div');
+                    item.className = 'rejection-progress-item';
+                    item.innerHTML = `
+                        <div class="rejection-progress-lbl">
+                            <span class="name" style="text-transform: capitalize;">${readableReason}</span>
+                            <span class="val">${count.toLocaleString()} (${pct}%)</span>
+                        </div>
+                        <div class="rejection-track-bar">
+                            <div class="rejection-fill-bar" style="width: ${pct}%"></div>
+                        </div>
+                    `;
+                    reasonProgress.appendChild(item);
+                });
+            }
+
+            // 3. Reasons Chart
+            setTimeout(() => {
+                const ctx = document.getElementById('rejectionReasonsChart').getContext('2d');
+                if (reasonsChartInstance) reasonsChartInstance.destroy();
+
+                const labels = Object.keys(run.rejections.reasons).map(lbl => lbl.replace(/_/g, ' '));
+                const data = Object.values(run.rejections.reasons);
+
+                reasonsChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Killed Count',
+                            data: data,
+                            backgroundColor: 'rgba(239, 68, 68, 0.65)',
+                            borderColor: '#ef4444',
+                            borderWidth: 1,
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#9ca3af', font: { size: 10 } }
+                            },
+                            y: {
+                                grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                ticks: { color: '#9ca3af' }
+                            }
+                        }
+                    }
+                });
+            }, 50);
+        }
+
+        function renderConfigTab(run) {
+            const codeBlock = document.getElementById('config-code-block');
+
+            // Format config to clean yaml-like text manually
+            let yamlStr = '';
+
+            function printObj(obj, indent = 0) {
+                const pad = ' '.repeat(indent);
+                for (let key in obj) {
+                    const val = obj[key];
+                    if (val && typeof val === 'object' && !Array.isArray(val)) {
+                        yamlStr += `${pad}${key}:\n`;
+                        printObj(val, indent + 2);
+                    } else if (Array.isArray(val)) {
+                        yamlStr += `${pad}${key}:\n`;
+                        val.forEach(item => {
+                            if (typeof item === 'object') {
+                                yamlStr += `${pad}  - \n`;
+                                printObj(item, indent + 4);
+                            } else {
+                                yamlStr += `${pad}  - ${item}\n`;
+                            }
+                        });
+                    } else {
+                        yamlStr += `${pad}${key}: ${val}\n`;
+                    }
+                }
+            }
+
+            printObj(run.config);
+            codeBlock.textContent = yamlStr || JSON.stringify(run.config, null, 2);
+        }
+
+        function showNoRunsState() {
+            document.body.innerHTML = `
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; width:100vw; height:100vh; background-color:#080b10; color:var(--text-secondary); text-align:center; padding:40px;">
+                    <div style="font-size:4rem; margin-bottom:20px;">📊</div>
+                    <h2 style="color:#fff; font-size:1.5rem; margin-bottom:12px;">No Research Runs Found</h2>
+                    <p style="max-width:400px; line-height:1.6; font-size:0.95rem; color:var(--text-muted)">
+                        We couldn't locate any completed research runs in <code>./data/runs/</code>. Please execute the research pipeline first using:
+                        <br><br>
+                        <code style="display:block; background-color:#0f1622; padding:12px; border-radius:8px; color:var(--accent-primary); font-family:monospace; text-align:left; font-size:0.85rem;">
+                            python -m quant_engine run config/default_research.yaml
+                        </code>
+                    </p>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

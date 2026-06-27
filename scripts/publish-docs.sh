@@ -12,6 +12,7 @@ fi
 
 # Build
 echo "Building documentation..."
+python scripts/generate_dashboard.py
 mkdocs build --strict
 
 echo ""

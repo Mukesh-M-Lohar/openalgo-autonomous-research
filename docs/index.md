@@ -22,6 +22,7 @@ A standalone, fully offline quantitative research microservice that autonomously
 
 ## Quick Links
 
+- [Interactive Results Dashboard](dashboard.html)
 - [Installation & Setup](getting-started.md)
 - [Developer Guide](developer-guide.md)
 - [API Reference](api/api-reference.md)

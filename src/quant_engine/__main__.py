@@ -94,7 +94,11 @@ def export(
     top_n: int = typer.Option(5, help="Number of strategies to export"),
 ):
     """Export top strategies as Python signal scripts."""
+    from quant_engine.export.formatter import StrategyExporter
+    from quant_engine.models.results import BacktestResult
+    from quant_engine.models.strategy import StrategyGenome
     from quant_engine.storage.csv_backend import CsvStorage
+    from quant_engine.storage.dashboard import clean_dict_str
 
     storage = CsvStorage("./data/runs")
     winners = storage.load_winners(run_id)
@@ -103,8 +107,25 @@ def export(
         typer.echo(f"No winners found for run {run_id}", err=True)
         raise typer.Exit(1)
 
+    export_dir = f"./data/runs/{run_id}/exports"
     typer.echo(f"Exporting top {min(top_n, len(winners))} strategies from run {run_id}...")
-    typer.echo(f"Exported to: ./data/runs/{run_id}/exports/")
+    exporter = StrategyExporter(output_dir=export_dir)
+
+    success_count = 0
+    for w in winners[:top_n]:
+        genome_dict = clean_dict_str(w.get("genome"))
+        backtest_dict = clean_dict_str(w.get("backtest"))
+        if not genome_dict:
+            continue
+        try:
+            strategy = StrategyGenome.from_dict(genome_dict)
+            backtest = BacktestResult(**backtest_dict)
+            exporter.export_strategy(strategy, backtest)
+            success_count += 1
+        except Exception as e:
+            typer.echo(f"Failed to export strategy {w.get('strategy_id')}: {e}", err=True)
+
+    typer.echo(f"Successfully exported {success_count} strategies to: {export_dir}/")
 
 
 @app.command(name="list")

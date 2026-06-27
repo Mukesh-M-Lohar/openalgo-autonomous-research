@@ -220,6 +220,55 @@ class TestEndToEnd:
             assert "strategy" in data
             assert data["strategy"]["id"] == strategy.id
 
+    def test_export_supertrend_strategy(self, synthetic_data):
+        """Exported script with supertrend should run and generate entry signals."""
+        import importlib.util
+        import tempfile
+
+        from quant_engine.models.strategy import (
+            CompareOp,
+            ConditionNode,
+            ExitRule,
+            IndicatorNode,
+            IndicatorType,
+            PriceSource,
+            StrategyGenome,
+            TimeframeType,
+            TradingStyle,
+        )
+
+        cond = ConditionNode(
+            left=IndicatorNode(
+                IndicatorType.SUPERTREND, (("period", 10), ("multiplier", 3.0)), TimeframeType.M15
+            ),
+            op=CompareOp.GT,
+            right=IndicatorNode(IndicatorType.PRICE, (), TimeframeType.M15, PriceSource.CLOSE),
+        )
+        strategy = StrategyGenome(
+            trading_style=TradingStyle.SWING,
+            entry_long=cond,
+            exit_long=ExitRule(stop_loss_pct=2.0, take_profit_pct=4.0),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exporter = StrategyExporter(tmpdir)
+            py_path, _ = exporter.export_strategy(strategy)
+
+            with open(py_path) as f:
+                source = f.read()
+            assert "_compute_supertrend" in source
+            assert "supertrend" in source
+
+            # Compile and load dynamically
+            spec = importlib.util.spec_from_file_location("temp_strategy", py_path)
+            temp_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(temp_module)
+
+            df = synthetic_data.copy()
+            entry_signal = temp_module.generate_entry_signal(df)
+            assert len(entry_signal) == len(df)
+            assert not entry_signal.isna().any()
+
     def test_config_loading(self):
         """Config files should load without errors."""
         from quant_engine.config import load_config
@@ -229,4 +278,4 @@ class TestEndToEnd:
         )
         assert config.name == "Default Research"
         assert "intraday" in config.trading_styles
-        assert config.generation.target_count == 10000
+        assert config.generation.target_count == 1000

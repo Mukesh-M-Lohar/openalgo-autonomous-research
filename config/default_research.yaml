@@ -3,33 +3,34 @@ description: "Default configuration for quick testing"
 
 trading_styles:
   - intraday
-  - swing
 
 data:
   openalgo:
     host: "http://127.0.0.1:5000"
-    api_key: "${OPENALGO_API_KEY}"
+    api_key: ${OPENALGO_API_KEY}
     source: "db"
   symbols:
-    - symbol: "NIFTY"
+    - symbol: "SBIN"
       exchange: "NSE"
   timeframes:
     - "15m"
     - "1h"
-  start_date: "2022-01-01"
-  end_date: "2024-12-31"
+  start_date: "2026-01-01"
+  end_date: "2026-06-25"
   train_pct: 0.7
   validation_pct: 0.15
   test_pct: 0.15
 
 generation:
   mode: "random"
-  target_count: 10000
+  target_count: 1000
   max_conditions_per_entry: 3
   allow_short: false
   indicator_categories:
     - trend
     - momentum
+    - volume
+    - volatility
   multi_timeframe: false
 
 filters:

@@ -1,0 +1,106 @@
+name: Indian Bluechips Swing Trend
+description: Medium-term swing trading across top NSE liquid blue-chips
+trading_styles:
+- swing
+style_overrides:
+  swing:
+    min_hold_bars: 10
+    max_hold_bars: 360
+    product_type: CNC
+    min_trades: 50
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: db
+  symbols:
+  - symbol: RELIANCE
+    exchange: NSE
+  - symbol: TCS
+    exchange: NSE
+  - symbol: INFOSYS
+    exchange: NSE
+  - symbol: HDFCBANK
+    exchange: NSE
+  - symbol: ICICIBANK
+    exchange: NSE
+  - symbol: SBIN
+    exchange: NSE
+  - symbol: LT
+    exchange: NSE
+  - symbol: ITC
+    exchange: NSE
+  - symbol: TATAMOTORS
+    exchange: NSE
+  - symbol: BHARTIENTL
+    exchange: NSE
+  timeframes:
+  - 1h
+  - 1d
+  start_date: '2021-01-01'
+  end_date: '2026-06-01'
+  train_pct: 0.7
+  validation_pct: 0.15
+  test_pct: 0.15
+generation:
+  mode: random
+  target_count: 50000
+  max_conditions_per_entry: 3
+  allow_short: false
+  indicator_categories:
+  - trend
+  - volume
+  multi_timeframe: true
+filters:
+  fast_reject:
+    max_complexity: 4
+    min_indicators: 1
+  backtest:
+    min_trades: 50
+    min_sharpe: 1.2
+    max_drawdown: 0.18
+    min_profit_factor: 1.4
+    min_win_rate: 0.45
+    min_cagr: 0.18
+  validation:
+    max_oos_sharpe_decay: 0.3
+    min_walk_forward_consistency: 0.7
+    monte_carlo_confidence: 0.95
+    param_stability_tolerance: 0.2
+evolution:
+  enabled: true
+  generations: 5
+  population_size: 400
+  mutation_rate: 0.3
+  crossover_rate: 0.5
+  elitism_pct: 0.1
+  tournament_size: 5
+ranking:
+  mode: robustness_first
+  objectives:
+  - metric: sharpe
+    weight: 0.35
+    direction: maximize
+  - metric: sortino
+    weight: 0.25
+    direction: maximize
+  - metric: max_drawdown_pct
+    weight: 0.2
+    direction: minimize
+  - metric: profit_factor
+    weight: 0.1
+    direction: maximize
+  - metric: cagr
+    weight: 0.1
+    direction: maximize
+  export_top_n: 20
+  export_per_category: 4
+cost_model:
+  commission_pct: 0.12
+  slippage_pct: 0.03
+  min_commission: 0.0
+output:
+  storage: csv
+  base_dir: ./data/runs
+  export_dir: ./data/exports
+  save_all_candidates: true
