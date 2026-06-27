@@ -18,7 +18,7 @@ data/exports/
 .pytest_cache/
 .coverage
 htmlcov/
-*15m*.csv
+*.csv
 
 # Data cache, research parameters, and results
 results.tsv
