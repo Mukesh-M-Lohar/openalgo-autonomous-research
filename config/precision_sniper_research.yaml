@@ -1,0 +1,108 @@
+name: Precision Sniper Research
+description: Autonomous research configuration using Precision Sniper confluence indicator components (EMAs, RSI, MACD, Volume, DMI/ADX, VWAP).
+trading_styles:
+  - intraday
+  - swing
+
+style_overrides:
+  intraday:
+    max_hold_bars: 100
+    forced_exit_time: '15:15'
+    product_type: MIS
+    min_trades: 150
+  swing:
+    min_hold_bars: 5
+    max_hold_bars: 400
+    product_type: MIS
+    min_trades: 50
+
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: db
+  symbols:
+    - symbol: MCX
+      exchange: NSE
+    - symbol: SBIN
+      exchange: NSE
+    - symbol: NIFTY
+      exchange: NSE_INDEX
+    - symbol: BANKNIFTY
+      exchange: NSE_INDEX
+  timeframes:
+    - 15m
+    - 1h
+    - 1d
+  start_date: '2024-01-01'
+  end_date: '2026-06-27'
+  train_pct: 0.70
+  validation_pct: 0.15
+  test_pct: 0.15
+
+generation:
+  mode: random
+  target_count: 5000
+  max_conditions_per_entry: 4
+  allow_short: true
+  indicator_categories:
+    - trend
+    - momentum
+    - volume
+    - volatility
+  multi_timeframe: true
+
+filters:
+  fast_reject:
+    max_complexity: 5
+    min_indicators: 2
+  backtest:
+    min_trades: 50
+    min_sharpe: 1.0
+    max_drawdown: 0.20
+    min_profit_factor: 1.3
+    min_win_rate: 0.40
+    min_cagr: 0.10
+  validation:
+    max_oos_sharpe_decay: 0.35
+    min_walk_forward_consistency: 0.65
+    monte_carlo_confidence: 0.95
+    param_stability_tolerance: 0.20
+
+evolution:
+  enabled: true
+  generations: 5
+  population_size: 250
+  mutation_rate: 0.3
+  crossover_rate: 0.5
+  elitism_pct: 0.1
+  tournament_size: 4
+
+ranking:
+  mode: robustness_first
+  objectives:
+    - metric: sharpe
+      weight: 0.4
+      direction: maximize
+    - metric: profit_factor
+      weight: 0.2
+      direction: maximize
+    - metric: max_drawdown_pct
+      weight: 0.2
+      direction: minimize
+    - metric: cagr
+      weight: 0.2
+      direction: maximize
+  export_top_n: 10
+  export_per_category: 3
+
+cost_model:
+  commission_pct: 0.03
+  slippage_pct: 0.015
+  min_commission: 20.0
+
+output:
+  storage: csv
+  base_dir: ./data/runs
+  export_dir: ./data/exports
+  save_all_candidates: true

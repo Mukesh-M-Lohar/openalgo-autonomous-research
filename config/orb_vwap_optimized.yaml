@@ -1,0 +1,73 @@
+name: ORB VWAP Optimized Intraday
+description: High-performance 15-minute Opening Range Breakout (ORB) + VWAP strategy optimized via walk-forward autonomous loop.
+trading_styles:
+- intraday
+style_overrides:
+  intraday:
+    forced_exit_time: '15:15'
+    product_type: MIS
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: api
+  symbols:
+  - symbol: PROTEAN
+    exchange: NSE
+  - symbol: ZEEL
+    exchange: NSE
+  - symbol: BAHETI-SM
+    exchange: NSE
+  - symbol: CDSL
+    exchange: NSE
+  - symbol: ANGELONE
+    exchange: NSE
+  - symbol: SCI
+    exchange: NSE
+  - symbol: ACUTAAS
+    exchange: NSE
+  - symbol: SAMMAANCAP
+    exchange: NSE
+  - symbol: CLEAN
+    exchange: NSE
+  - symbol: COPPER31JUL26FUT
+    exchange: MCX
+  - symbol: COPPER31AUG26FUT
+    exchange: MCX
+  - symbol: MCX
+    exchange: NSE
+  - symbol: SBIN
+    exchange: NSE
+  - symbol: BSE
+    exchange: NSE
+  - symbol: NIFTY
+    exchange: NSE_INDEX
+  - symbol: BANKNIFTY
+    exchange: NSE_INDEX
+  timeframes:
+  - 15m
+  start_date: '2025-01-01'
+  end_date: '2026-06-27'
+strategy:
+  type: orb_vwap
+  indicators:
+    rsi:
+      period: 14
+    vwap:
+      enabled: true
+    orb:
+      range_minutes: 15
+  parameters:
+    take_profit_pct: 2.5
+    stop_loss_pct: 1.0
+    allocation_factor: 4.0
+    use_atr_stop: false
+    atr_mult: 2.5
+cost_model:
+  commission_pct: 0.03
+  slippage_pct: 0.02
+  min_commission: 20.0
+output:
+  storage: csv
+  base_dir: ./data/runs
+  export_dir: ./data/exports
