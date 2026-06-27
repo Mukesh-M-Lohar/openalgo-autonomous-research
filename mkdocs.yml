@@ -1,6 +1,7 @@
 site_name: OpenAlgo Quant Research Engine
 site_description: Autonomous strategy discovery, validation, and export
 site_url: https://your-username.github.io/openalgo-quant-engine/
+docs_dir: docs
 
 repo_url: https://github.com/your-username/openalgo-quant-engine
 repo_name: openalgo-quant-engine
