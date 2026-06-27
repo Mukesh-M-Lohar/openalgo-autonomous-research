@@ -93,7 +93,217 @@ def get_strategy_params() -> dict:
     }
 
 
+# ===============================================================================
+# REAL-TIME BOT RUNNER & EXECUTION (with funds check)
+# ===============================================================================
+
+import os
+import threading
+import time
+from datetime import datetime, timedelta
+
+try:
+    from openalgo import api
+except ImportError:
+    api = None
+
+# API Configuration - read from environment with sensible fallbacks
+API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
+API_HOST = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
+WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
+
+# Trade Settings
+SYMBOL = os.getenv("SYMBOL", "RELIANCE")
+EXCHANGE = os.getenv("OPENALGO_STRATEGY_EXCHANGE", os.getenv("EXCHANGE", "NSE"))
+QUANTITY = int(os.getenv("QUANTITY", "1"))
+PRODUCT = os.getenv("PRODUCT", "{{ strategy.product_type }}")
+
+# Candle Timeframe - default to the primary timeframe used by the strategy
+CANDLE_TIMEFRAME = os.getenv("CANDLE_TIMEFRAME", "{{ strategy.timeframes_used[0].value if strategy.timeframes_used else '5m' }}")
+LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "3"))
+SIGNAL_CHECK_INTERVAL = int(os.getenv("SIGNAL_CHECK_INTERVAL", "15"))
+
+
+class StrategyBot:
+    def __init__(self):
+        if api is None:
+            raise ImportError("The 'openalgo' package is required to run the bot. Install it with: pip install openalgo")
+
+        self.client = api(
+            api_key=API_KEY,
+            host=API_HOST,
+            ws_url=WS_URL,
+        )
+        self.position = None
+        self.entry_price = 0.0
+        self.ltp = None
+        self.running = True
+        self.stop_event = threading.Event()
+        self.instrument = [{"exchange": EXCHANGE, "symbol": SYMBOL}]
+        self.strategy_name = os.getenv("STRATEGY_NAME", "Strategy_{{ strategy.id }}")
+
+        print(f"[BOT] Initialized Strategy {{ strategy.id }} on {SYMBOL} ({EXCHANGE})")
+
+    def on_ltp_update(self, data):
+        if data.get("type") == "market_data" and data.get("symbol") == SYMBOL:
+            self.ltp = float(data["data"]["ltp"])
+
+    def websocket_thread(self):
+        try:
+            self.client.connect()
+            self.client.subscribe_ltp(
+                self.instrument, on_data_received=self.on_ltp_update
+            )
+            while not self.stop_event.is_set():
+                time.sleep(1)
+        except Exception as e:
+            print(f"[ERROR] WebSocket error: {e}")
+        finally:
+            try:
+                self.client.unsubscribe_ltp(self.instrument)
+                self.client.disconnect()
+            except Exception:
+                pass
+
+    def get_historical_data(self):
+        try:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=LOOKBACK_DAYS)
+            history_data = self.client.history(
+                symbol=SYMBOL,
+                exchange=EXCHANGE,
+                interval=CANDLE_TIMEFRAME,
+                start_date=start_date.strftime("%Y-%m-%d"),
+                end_date=end_date.strftime("%Y-%m-%d"),
+            )
+            if history_data and isinstance(history_data, list):
+                return pd.DataFrame(history_data)
+            elif isinstance(history_data, dict) and history_data.get("status") == "success":
+                return pd.DataFrame(history_data.get("data", []))
+            return pd.DataFrame(history_data)
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch history: {e}")
+            return None
+
+    def check_funds_before_order(self) -> bool:
+        """Verify if there are sufficient funds before placing an entry order."""
+        try:
+            funds_resp = self.client.funds()
+            if funds_resp and funds_resp.get("status") == "success":
+                funds_data = funds_resp.get("data", {})
+                available_balance = float(funds_data.get("available_balance", 0.0))
+
+                # Fetch price (prefer LTP, fallback to current quote or close price)
+                price = self.ltp if self.ltp is not None else 0.0
+                if price <= 0.0:
+                    quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
+                    if quotes_resp and quotes_resp.get("status") == "success":
+                        price = float(quotes_resp.get("data", {}).get("last_price", 0.0))
+
+                if price <= 0.0:
+                    # Fetch from historical close as final fallback
+                    df = self.get_historical_data()
+                    if df is not None and not df.empty:
+                        price = float(df["close"].iloc[-1])
+
+                estimated_cost = price * QUANTITY
+                print(f"[BOT] Checking funds. Available: {available_balance}, Estimated Cost: {estimated_cost:.2f} (Price: {price:.2f} * Qty: {QUANTITY})")
+
+                if available_balance < estimated_cost:
+                    print(f"[WARNING] Insufficient funds! Required: {estimated_cost:.2f}, Available: {available_balance:.2f}. Order aborted.")
+                    return False
+                return True
+            else:
+                print("[WARNING] Could not fetch funds info to verify. Proceeding anyway.")
+                return True
+        except Exception as e:
+            print(f"[WARNING] Error occurred during funds check: {e}. Proceeding anyway.")
+            return True
+
+    def place_entry_order(self):
+        # CRITICAL: Verify funds before placing entry order
+        if not self.check_funds_before_order():
+            return
+
+        print(f"[BOT] Placing entry BUY order for {QUANTITY} shares of {SYMBOL}...")
+        response = self.client.placeorder(
+            strategy=self.strategy_name,
+            symbol=SYMBOL,
+            exchange=EXCHANGE,
+            action="BUY",
+            quantity=QUANTITY,
+            price_type="MARKET",
+            product=PRODUCT,
+        )
+        if response.get("status") == "success":
+            self.position = "BUY"
+            # Get entry price from quote or LTP
+            self.entry_price = self.ltp if self.ltp is not None else 0.0
+            if self.entry_price <= 0.0:
+                quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
+                if quotes_resp and quotes_resp.get("status") == "success":
+                    self.entry_price = float(quotes_resp.get("data", {}).get("last_price", 0.0))
+            print(f"[BOT] Entry order successful at estimated price: {self.entry_price}")
+        else:
+            print(f"[BOT] Entry order failed: {response}")
+
+    def place_exit_order(self):
+        print(f"[BOT] Placing exit SELL order for {QUANTITY} shares of {SYMBOL}...")
+        response = self.client.placeorder(
+            strategy=self.strategy_name,
+            symbol=SYMBOL,
+            exchange=EXCHANGE,
+            action="SELL",
+            quantity=QUANTITY,
+            price_type="MARKET",
+            product=PRODUCT,
+        )
+        if response.get("status") == "success":
+            self.position = None
+            self.entry_price = 0.0
+            print("[BOT] Exit order successful.")
+        else:
+            print(f"[BOT] Exit order failed: {response}")
+
+    def run(self):
+        # Start the WebSocket thread
+        ws_thread = threading.Thread(target=self.websocket_thread, daemon=True)
+        ws_thread.start()
+        time.sleep(2)  # Allow WS to connect
+
+        print("[BOT] Starting real-time execution loop...")
+        try:
+            while self.running:
+                df = self.get_historical_data()
+                if df is not None and len(df) > 0:
+                    if self.position is None:
+                        # Compute indicators and check entry signal
+                        entry_signals = generate_entry_signal(df)
+                        if len(entry_signals) > 0 and entry_signals.iloc[-1]:
+                            self.place_entry_order()
+                    elif self.position == "BUY":
+                        # Compute exit signal based on exit rules/logic
+                        exit_signals = generate_exit_signal(df, self.entry_price)
+                        if len(exit_signals) > 0 and exit_signals.iloc[-1]:
+                            self.place_exit_order()
+                time.sleep(SIGNAL_CHECK_INTERVAL)
+        except KeyboardInterrupt:
+            print("[BOT] Bot stopped manually.")
+        finally:
+            self.running = False
+            self.stop_event.set()
+
+
 if __name__ == "__main__":
-    print("Strategy: {{ strategy.id }}")
-    print("Style: {{ strategy.trading_style.value }}")
-    print("This is a signal generator. Feed OHLCV data to generate_entry_signal().")
+    import sys
+    print(f"Strategy: {{ strategy.id }} (Style: {{ strategy.trading_style.value }})")
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--run":
+        if api is None:
+            print("Error: The 'openalgo' package is required to run the bot. Install it with: pip install openalgo")
+            sys.exit(1)
+        bot = StrategyBot()
+        bot.run()
+    else:
+        print("This is a signal generator. Feed OHLCV data to generate_entry_signal().")
+        print("To run this strategy directly as a real-time trading bot, use: python <script_name>.py --run")

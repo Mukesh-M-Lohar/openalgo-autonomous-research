@@ -279,3 +279,65 @@ class TestEndToEnd:
         assert config.name == "Default Research"
         assert "intraday" in config.trading_styles
         assert config.generation.target_count == 1000
+
+    def test_exported_strategy_bot_funds_check(self):
+        """Test the exported StrategyBot's funds check functionality."""
+        import importlib.util
+        import tempfile
+        from unittest.mock import MagicMock
+
+        from quant_engine.models.strategy import (
+            CompareOp,
+            ConditionNode,
+            ExitRule,
+            IndicatorNode,
+            IndicatorType,
+            StrategyGenome,
+            TimeframeType,
+            TradingStyle,
+        )
+
+        cond = ConditionNode(
+            left=IndicatorNode(IndicatorType.SMA, (("period", 10),), TimeframeType.M15),
+            op=CompareOp.GT,
+            right=10.0,
+        )
+        strategy = StrategyGenome(
+            trading_style=TradingStyle.SWING,
+            entry_long=cond,
+            exit_long=ExitRule(stop_loss_pct=2.0, take_profit_pct=4.0),
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            exporter = StrategyExporter(tmpdir)
+            py_path, _ = exporter.export_strategy(strategy)
+
+            # Compile and load dynamically
+            spec = importlib.util.spec_from_file_location("temp_strategy_bot", py_path)
+            temp_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(temp_module)
+
+            # Mock the openalgo API
+            mock_api_class = MagicMock()
+            mock_client = MagicMock()
+            mock_api_class.return_value = mock_client
+            temp_module.api = mock_api_class
+
+            # Instantiate StrategyBot
+            bot = temp_module.StrategyBot()
+            bot.ltp = 100.0  # Set price
+            temp_module.QUANTITY = 5  # Cost will be 500.0
+
+            # Case 1: Sufficient funds
+            mock_client.funds.return_value = {
+                "status": "success",
+                "data": {"available_balance": 1000.0},
+            }
+            assert bot.check_funds_before_order() is True
+
+            # Case 2: Insufficient funds
+            mock_client.funds.return_value = {
+                "status": "success",
+                "data": {"available_balance": 200.0},
+            }
+            assert bot.check_funds_before_order() is False
