@@ -56,6 +56,7 @@ class OpenAlgoClient:
         }
 
         url = f"{self._config.host.rstrip('/')}/api/v1/history"
+        print(payload)
         response = self._client.post(url, json=payload)
         response.raise_for_status()
 
@@ -69,7 +70,10 @@ class OpenAlgoClient:
             return df
 
         if "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            if pd.api.types.is_numeric_dtype(df["timestamp"]):
+                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+            else:
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
             df = df.set_index("timestamp").sort_index()
 
         for col in ["open", "high", "low", "close", "volume"]:

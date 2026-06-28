@@ -15,7 +15,7 @@ data:
     source: db
   symbols:
   - symbol: BANKNIFTY
-    exchange: NSE
+    exchange: NSE_INDEX
   timeframes:
   - 5m
   - 15m
@@ -26,7 +26,7 @@ data:
   test_pct: 0.15
 generation:
   mode: guided
-  target_count: 30000
+  target_count: 10000
   max_conditions_per_entry: 3
   allow_short: true
   indicator_categories:
