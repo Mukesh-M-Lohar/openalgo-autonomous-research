@@ -181,16 +181,17 @@ def _simulate_trades(
     max_hold_bars: int | None = None,
 ) -> tuple[list[dict], pd.DataFrame]:
     """
-    Simple bar-by-bar trade simulator supporting stops and exits.
+    Simple bar-by-bar trade simulator supporting long/short entries, stops and exits.
     """
     trades = []
     equity = initial_capital
     equity_points = []
 
-    entry_price: float | None = None
+    position: str | None = None  # "long", "short", or None
+    entry_price = 0.0
     entry_bar: int | None = None
     max_price_since_entry = 0.0
-    in_trade = False
+    min_price_since_entry = 0.0
 
     price_arr = price_df.reset_index()
     sig_aligned = signals_df.reindex(price_df.index, fill_value=False)
@@ -201,86 +202,174 @@ def _simulate_trades(
 
         entry_sig = bool(sig.get("entry", False))
         exit_sig = bool(sig.get("exit", False))
+        short_entry_sig = bool(sig.get("short_entry", False))
+        short_exit_sig = bool(sig.get("short_exit", False))
 
-        if in_trade:
+        if position is not None:
             bars_held = i - entry_bar
             current_high = float(row["high"])
             current_low = float(row["low"])
             current_close = float(row["close"])
-            max_price_since_entry = max(max_price_since_entry, current_high)
 
             exit_price_val = None
             exit_reason = ""
 
-            # Check stop loss pct
-            if stop_loss_pct is not None:
-                sl_price = entry_price * (1 - stop_loss_pct / 100)
-                if current_low <= sl_price:
-                    exit_price_val = sl_price
-                    exit_reason = "stop_loss"
+            if position == "long":
+                max_price_since_entry = max(max_price_since_entry, current_high)
 
-            # Check ATR stop loss
-            if exit_price_val is None and atr_mult_sl > 0 and atr_series is not None:
-                atr_val = atr_series.iloc[entry_bar]
-                sl_price = entry_price - atr_mult_sl * atr_val
-                if current_low <= sl_price:
-                    exit_price_val = sl_price
-                    exit_reason = "atr_stop_loss"
+                # Check stop loss pct
+                if stop_loss_pct is not None:
+                    sl_price = entry_price * (1 - stop_loss_pct / 100)
+                    if current_low <= sl_price:
+                        exit_price_val = sl_price
+                        exit_reason = "stop_loss"
 
-            # Check take profit pct
-            if exit_price_val is None and take_profit_pct is not None:
-                tp_price = entry_price * (1 + take_profit_pct / 100)
-                if current_high >= tp_price:
-                    exit_price_val = tp_price
-                    exit_reason = "take_profit"
+                # Check ATR stop loss
+                if exit_price_val is None and atr_mult_sl > 0 and atr_series is not None:
+                    atr_val = atr_series.iloc[entry_bar]
+                    sl_price = entry_price - atr_mult_sl * atr_val
+                    if current_low <= sl_price:
+                        exit_price_val = sl_price
+                        exit_reason = "atr_stop_loss"
 
-            # Check trailing stop
-            if exit_price_val is None and trailing_stop_pct is not None:
-                trail_price = max_price_since_entry * (1 - trailing_stop_pct / 100)
-                if current_low <= trail_price:
-                    exit_price_val = trail_price
-                    exit_reason = "trailing_stop"
+                # Check take profit pct
+                if exit_price_val is None and take_profit_pct is not None:
+                    tp_price = entry_price * (1 + take_profit_pct / 100)
+                    if current_high >= tp_price:
+                        exit_price_val = tp_price
+                        exit_reason = "take_profit"
 
-            # Check max hold bars
-            if exit_price_val is None and max_hold_bars is not None:
-                if bars_held >= max_hold_bars:
-                    exit_price_val = current_close
-                    exit_reason = "max_hold"
+                # Check trailing stop
+                if exit_price_val is None and trailing_stop_pct is not None:
+                    trail_price = max_price_since_entry * (1 - trailing_stop_pct / 100)
+                    if current_low <= trail_price:
+                        exit_price_val = trail_price
+                        exit_reason = "trailing_stop"
 
-            # Check standard exit signal or final bar
-            if exit_price_val is None and (exit_sig or i == len(price_arr) - 1):
-                exit_price_val = float(row["open"]) * (1 - slippage_pct / 100)
-                exit_reason = "signal" if exit_sig else "end_of_data"
+                # Check max hold bars
+                if exit_price_val is None and max_hold_bars is not None:
+                    if bars_held >= max_hold_bars:
+                        exit_price_val = current_close
+                        exit_reason = "max_hold"
 
-            if exit_price_val is not None:
-                if exit_reason in ["stop_loss", "atr_stop_loss", "take_profit", "trailing_stop"]:
-                    # Limit/stop execution adjustment
-                    exit_price_val = exit_price_val * (1 - slippage_pct / 100)
+                # Check standard exit signal or final bar
+                if exit_price_val is None and (exit_sig or i == len(price_arr) - 1):
+                    exit_price_val = float(row["open"]) * (1 - slippage_pct / 100)
+                    exit_reason = "signal" if exit_sig else "end_of_data"
 
-                pnl_pct = (exit_price_val / entry_price - 1) * 100 - (
-                    commission_pct + slippage_pct
-                ) * 2
-                pnl_abs = equity * pnl_pct / 100
-                equity = max(equity + pnl_abs, 0.0)
-                trades.append(
-                    {
-                        "entry_bar": entry_bar,
-                        "exit_bar": i,
-                        "bars_held": bars_held,
-                        "pnl_pct": round(pnl_pct, 6),
-                        "pnl_abs": round(pnl_abs, 2),
-                        "entry_price": entry_price,
-                        "exit_price": exit_price_val,
-                        "exit_reason": exit_reason,
-                    }
-                )
-                in_trade = False
+                if exit_price_val is not None:
+                    if exit_reason in [
+                        "stop_loss",
+                        "atr_stop_loss",
+                        "take_profit",
+                        "trailing_stop",
+                    ]:
+                        exit_price_val = exit_price_val * (1 - slippage_pct / 100)
 
-        if not in_trade and entry_sig and i < len(price_arr) - 1:
-            entry_price = float(row["open"]) * (1 + (commission_pct + slippage_pct) / 100)
-            entry_bar = i
-            max_price_since_entry = float(row["high"])
-            in_trade = True
+                    pnl_pct = (exit_price_val / entry_price - 1) * 100 - (
+                        commission_pct + slippage_pct
+                    ) * 2
+                    pnl_abs = equity * pnl_pct / 100
+                    equity = max(equity + pnl_abs, 0.0)
+                    trades.append(
+                        {
+                            "entry_bar": entry_bar,
+                            "exit_bar": i,
+                            "bars_held": bars_held,
+                            "pnl_pct": round(pnl_pct, 6),
+                            "pnl_abs": round(pnl_abs, 2),
+                            "entry_price": entry_price,
+                            "exit_price": exit_price_val,
+                            "exit_reason": exit_reason,
+                            "direction": "long",
+                        }
+                    )
+                    position = None
+
+            elif position == "short":
+                min_price_since_entry = min(min_price_since_entry, current_low)
+
+                # Check stop loss pct (short stop loss is above entry)
+                if stop_loss_pct is not None:
+                    sl_price = entry_price * (1 + stop_loss_pct / 100)
+                    if current_high >= sl_price:
+                        exit_price_val = sl_price
+                        exit_reason = "stop_loss"
+
+                # Check ATR stop loss (short stop loss is above entry)
+                if exit_price_val is None and atr_mult_sl > 0 and atr_series is not None:
+                    atr_val = atr_series.iloc[entry_bar]
+                    sl_price = entry_price + atr_mult_sl * atr_val
+                    if current_high >= sl_price:
+                        exit_price_val = sl_price
+                        exit_reason = "atr_stop_loss"
+
+                # Check take profit pct (short take profit is below entry)
+                if exit_price_val is None and take_profit_pct is not None:
+                    tp_price = entry_price * (1 - take_profit_pct / 100)
+                    if current_low <= tp_price:
+                        exit_price_val = tp_price
+                        exit_reason = "take_profit"
+
+                # Check trailing stop (short trailing stop is above min price since entry)
+                if exit_price_val is None and trailing_stop_pct is not None:
+                    trail_price = min_price_since_entry * (1 + trailing_stop_pct / 100)
+                    if current_high >= trail_price:
+                        exit_price_val = trail_price
+                        exit_reason = "trailing_stop"
+
+                # Check max hold bars
+                if exit_price_val is None and max_hold_bars is not None:
+                    if bars_held >= max_hold_bars:
+                        exit_price_val = current_close
+                        exit_reason = "max_hold"
+
+                # Check standard exit signal or final bar
+                if exit_price_val is None and (short_exit_sig or i == len(price_arr) - 1):
+                    exit_price_val = float(row["open"]) * (1 + slippage_pct / 100)
+                    exit_reason = "signal" if short_exit_sig else "end_of_data"
+
+                if exit_price_val is not None:
+                    if exit_reason in [
+                        "stop_loss",
+                        "atr_stop_loss",
+                        "take_profit",
+                        "trailing_stop",
+                    ]:
+                        exit_price_val = exit_price_val * (1 + slippage_pct / 100)
+
+                    # Short profit formula: (1 - exit/entry)
+                    pnl_pct = (1 - exit_price_val / entry_price) * 100 - (
+                        commission_pct + slippage_pct
+                    ) * 2
+                    pnl_abs = equity * pnl_pct / 100
+                    equity = max(equity + pnl_abs, 0.0)
+                    trades.append(
+                        {
+                            "entry_bar": entry_bar,
+                            "exit_bar": i,
+                            "bars_held": bars_held,
+                            "pnl_pct": round(pnl_pct, 6),
+                            "pnl_abs": round(pnl_abs, 2),
+                            "entry_price": entry_price,
+                            "exit_price": exit_price_val,
+                            "exit_reason": exit_reason,
+                            "direction": "short",
+                        }
+                    )
+                    position = None
+
+        if position is None and i < len(price_arr) - 1:
+            if entry_sig:
+                entry_price = float(row["open"]) * (1 + (commission_pct + slippage_pct) / 100)
+                entry_bar = i
+                max_price_since_entry = float(row["high"])
+                position = "long"
+            elif short_entry_sig:
+                entry_price = float(row["open"]) * (1 - (commission_pct + slippage_pct) / 100)
+                entry_bar = i
+                min_price_since_entry = float(row["low"])
+                position = "short"
 
         equity_points.append({"equity": equity})
 

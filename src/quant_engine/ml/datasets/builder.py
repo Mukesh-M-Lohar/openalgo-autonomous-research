@@ -27,7 +27,13 @@ class DatasetBuilder:
             feature_config: Configuration dict for FeatureExtractor.
             label_config: Configuration dict for LabelGenerator.
         """
-        self.extractor = FeatureExtractor(feature_config)
+        # Flatten features dict and merge with dataset-level options (e.g. rolling_windows)
+        feat_dict = (feature_config or {}).copy()
+        features_sub = feat_dict.pop("features", {})
+        if isinstance(features_sub, dict):
+            feat_dict.update(features_sub)
+
+        self.extractor = FeatureExtractor(feat_dict)
         self.label_gen = LabelGenerator(label_config)
         self.source = (feature_config or {}).get("source", "ohlcv")
 

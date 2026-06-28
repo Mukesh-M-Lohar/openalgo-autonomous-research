@@ -144,6 +144,7 @@ class MLDatasetConfig(BaseModel):
             "rolling": True,
         }
     )
+    rolling_windows: list[int] = Field(default_factory=lambda: [5, 10, 20, 50])
 
 
 class MLLabelsConfig(BaseModel):

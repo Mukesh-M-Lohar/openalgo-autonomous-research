@@ -1,6 +1,6 @@
 .PHONY: help setup test lint format serve-dev serve run-default run-example docs clean build
 
-PYTHON ?= python
+PYTHON ?= .venv/bin/python
 PYTHONPATH := src
 export PYTHONPATH
 
@@ -68,6 +68,27 @@ run-default: ## Run research with default config
 
 run-example: ## Run research with example config
 	$(PYTHON) -m quant_engine run config/example_research.yaml --debug
+
+# Support running with direct argument: make run config/example_research.yaml or make run example_research.yaml
+ifeq ($(firstword $(MAKECMDGOALS)),run)
+  RUN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  $(eval $(RUN_ARGS):;@:)
+endif
+
+run: ## Run research with provided config
+	@CONFIG_FILE="$(RUN_ARGS)"; \
+	if [ -z "$$CONFIG_FILE" ]; then \
+		CONFIG_FILE="$(config)"; \
+	fi; \
+	if [ -z "$$CONFIG_FILE" ]; then \
+		echo "Usage: make run <config-name-or-path.yaml>"; \
+		echo "Example: make run sbin_intraday_ml.yaml"; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$CONFIG_FILE" ] && [ -f "config/$$CONFIG_FILE" ]; then \
+		CONFIG_FILE="config/$$CONFIG_FILE"; \
+	fi; \
+	$(PYTHON) -m quant_engine run $$CONFIG_FILE
 
 list-runs: ## List all completed research runs
 	$(PYTHON) -m quant_engine list

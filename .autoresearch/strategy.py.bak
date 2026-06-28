@@ -59,6 +59,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITY — generic helpers the agent can call or replace freely
 # ══════════════════════════════════════════════════════════════════════════════
@@ -75,8 +76,8 @@ def _ema(s: pd.Series, n: int) -> pd.Series:
 def _rsi(s: pd.Series, n: int = 14) -> pd.Series:
     d = s.diff()
     g = d.clip(lower=0).ewm(com=n - 1, min_periods=n).mean()
-    losses = (-d.clip(upper=0)).ewm(com=n - 1, min_periods=n).mean()
-    return 100 - 100 / (1 + g / losses.replace(0, np.nan))
+    l = (-d.clip(upper=0)).ewm(com=n - 1, min_periods=n).mean()
+    return 100 - 100 / (1 + g / l.replace(0, np.nan))
 
 
 def _atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
@@ -113,12 +114,12 @@ def _stoch(df: pd.DataFrame, k: int = 14, d: int = 3):
 def _adx(df: pd.DataFrame, n: int = 14) -> pd.Series:
     """Average Directional Index (trend strength, 0-100)."""
     atr = _atr(df, n)
-    up = df["high"].diff()
+    up   = df["high"].diff()
     down = -df["low"].diff()
-    plus_dm = np.where((up > down) & (up > 0), up, 0.0)
+    plus_dm  = np.where((up > down) & (up > 0), up, 0.0)
     minus_dm = np.where((down > up) & (down > 0), down, 0.0)
-    plus_di = 100 * pd.Series(plus_dm, index=df.index).ewm(com=n - 1, min_periods=n).mean() / atr
-    minus_di = 100 * pd.Series(minus_dm, index=df.index).ewm(com=n - 1, min_periods=n).mean() / atr
+    plus_di  = 100 * pd.Series(plus_dm,  index=df.index).ewm(com=n-1, min_periods=n).mean() / atr
+    minus_di = 100 * pd.Series(minus_dm, index=df.index).ewm(com=n-1, min_periods=n).mean() / atr
     dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
     return dx.ewm(com=n - 1, min_periods=n).mean()
 
@@ -149,12 +150,12 @@ def _price_oi_divergence(df: pd.DataFrame, n: int = 5) -> pd.Series:
     if "oi" not in df.columns or df["oi"].isna().all():
         return pd.Series(np.nan, index=df.index)
     price_chg = df["close"].pct_change(n)
-    oi_chg = df["oi"].pct_change(n)
+    oi_chg    = df["oi"].pct_change(n)
     return price_chg * np.sign(oi_chg)  # sign alignment score
 
 
 def _zscore(s: pd.Series, n: int = 20) -> pd.Series:
-    mu = s.rolling(n).mean()
+    mu  = s.rolling(n).mean()
     sig = s.rolling(n).std(ddof=0)
     return (s - mu) / sig.replace(0, np.nan)
 
@@ -169,10 +170,10 @@ def _regime(df: pd.DataFrame, n: int = 50) -> pd.Series:
     ema = _ema(df["close"], n)
     slope = ema.pct_change(5)
     trending = adx > 20
-    up = trending & (slope > 0)
+    up   = trending & (slope > 0)
     down = trending & (slope < 0)
     regime = pd.Series(0, index=df.index)
-    regime[up] = 1
+    regime[up]   =  1
     regime[down] = -1
     return regime
 
@@ -182,27 +183,27 @@ def _regime(df: pd.DataFrame, n: int = 50) -> pd.Series:
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Trend / momentum
-EMA_FAST = 3
-EMA_SLOW = 12
-EMA_TREND = 55  # macro trend filter
+EMA_FAST   = 3
+EMA_SLOW   = 12
+EMA_TREND  = 55        # macro trend filter
 
 # RSI
-RSI_PERIOD = 14
-RSI_ENTRY_LO = 35  # enter only above this (momentum already building)
-RSI_ENTRY_HI = 75  # don't chase overbought
-RSI_EXIT_HI = 90  # take profit on overbought
+RSI_PERIOD   = 14
+RSI_ENTRY_LO = 35      # enter only above this (momentum already building)
+RSI_ENTRY_HI = 75      # don't chase overbought
+RSI_EXIT_HI  = 90      # take profit on overbought
 
 # MACD
-MACD_FAST = 5
-MACD_SLOW = 13
+MACD_FAST   = 5
+MACD_SLOW   = 13
 MACD_SIGNAL = 7
 
 # Volume surge
-VOL_MULT = 1.4  # entry bar volume must be > VOL_MULT × rolling avg
+VOL_MULT = 1.4         # entry bar volume must be > VOL_MULT × rolling avg
 
 # ATR stop-loss
-ATR_PERIOD = 14
-ATR_MULT_SL = 3.0  # 0 = disabled
+ATR_PERIOD   = 14
+ATR_MULT_SL  = 3.0     # 0 = disabled
 
 # Fixed exits
 STOP_LOSS_PCT = 3.0
@@ -211,11 +212,11 @@ TRAILING_STOP_PCT = None
 MAX_HOLD_BARS = None
 
 # OI filters (only active when OI data is present)
-OI_CONFIRM = True  # require OI rising on entry
-OI_LOOKBACK = 3  # bars for OI change
+OI_CONFIRM   = True    # require OI rising on entry
+OI_LOOKBACK  = 3       # bars for OI change
 
 # ADX trend filter
-ADX_MIN = 0  # skip entries in directionless markets
+ADX_MIN = 0            # skip entries in directionless markets
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -239,25 +240,23 @@ def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
             (optional) short_entry, short_exit
     """
 
-    close = df["close"]
-    high = df["high"]
-    low = df["low"]
+    close  = df["close"]
+    high   = df["high"]
+    low    = df["low"]
     volume = df["volume"]
 
     has_oi = "oi" in df.columns and not df["oi"].isna().all() and not (df["oi"] == 0).all()
-    has_vol = (
-        "volume" in df.columns and not (df["volume"] == 0).all() and not df["volume"].isna().all()
-    )
+    has_vol = "volume" in df.columns and not (df["volume"] == 0).all() and not df["volume"].isna().all()
 
     # ── Indicators ──────────────────────────────────────────────────────────────
 
-    ema_fast = _ema(close, EMA_FAST)
-    ema_slow = _ema(close, EMA_SLOW)
+    ema_fast  = _ema(close, EMA_FAST)
+    ema_slow  = _ema(close, EMA_SLOW)
     ema_trend = _ema(close, EMA_TREND)
-    rsi = _rsi(close, RSI_PERIOD)
+    rsi       = _rsi(close, RSI_PERIOD)
     macd_line, macd_sig, macd_hist = _macd(close, MACD_FAST, MACD_SLOW, MACD_SIGNAL)
-    atr = _atr(df, ATR_PERIOD)
-    adx = _adx(df, 14)
+    atr       = _atr(df, ATR_PERIOD)
+    adx       = _adx(df, 14)
 
     vol_surge = pd.Series(True, index=df.index)
     if has_vol:
@@ -265,33 +264,33 @@ def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
         vol_surge = volume > (VOL_MULT * vol_avg)
 
     # OI indicators (gracefully degrade when absent)
-    oi_rising = pd.Series(True, index=df.index)  # default: don't block
+    oi_rising = pd.Series(True, index=df.index)   # default: don't block
     if has_oi and OI_CONFIRM:
-        oi_chg = df["oi"].diff(OI_LOOKBACK)
+        oi_chg    = df["oi"].diff(OI_LOOKBACK)
         oi_rising = oi_chg > 0
 
     # ── Entry conditions ────────────────────────────────────────────────────────
 
     # 1. EMA stack: fast > slow
-    ema_bull = ema_fast > ema_slow
+    ema_bull    = (ema_fast > ema_slow)
 
     # 2. EMA cross (golden cross on fast/slow)
-    ema_cross = (ema_fast > ema_slow) & (ema_fast.shift(1) <= ema_slow.shift(1))
+    ema_cross   = (ema_fast > ema_slow) & (ema_fast.shift(1) <= ema_slow.shift(1))
 
     # 3. MACD momentum: histogram turning positive
-    macd_turn = (macd_hist > 0) & (macd_hist.shift(1) <= 0)
+    macd_turn   = (macd_hist > 0) & (macd_hist.shift(1) <= 0)
 
     # 4. RSI in momentum zone (not oversold, not overbought)
-    rsi_zone = (rsi > RSI_ENTRY_LO) & (rsi < RSI_ENTRY_HI)
+    rsi_zone    = (rsi > RSI_ENTRY_LO) & (rsi < RSI_ENTRY_HI)
 
     # 5. Volume surge confirms interest
     vol_surge_ok = vol_surge
 
     # 6. ADX confirms trend exists
-    adx_ok = adx > ADX_MIN
+    adx_ok      = adx > ADX_MIN
 
     # 7. OI confirmation (no-op when OI absent)
-    oi_ok = oi_rising
+    oi_ok       = oi_rising
 
     # Composite entry: EMA cross OR MACD turn, filtered by trend/momentum/OI
     signal_trigger = ema_cross | macd_turn
@@ -300,16 +299,16 @@ def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── Exit conditions ─────────────────────────────────────────────────────────
 
     # 1. EMA death cross
-    ema_bear = (ema_fast < ema_slow) & (ema_fast.shift(1) >= ema_slow.shift(1))
+    ema_bear    = (ema_fast < ema_slow) & (ema_fast.shift(1) >= ema_slow.shift(1))
 
     # 2. RSI overbought exhaustion
-    rsi_ob = rsi > RSI_EXIT_HI
+    rsi_ob      = rsi > RSI_EXIT_HI
 
     # 3. MACD histogram turning negative
-    macd_fail = (macd_hist < 0) & (macd_hist.shift(1) >= 0)
+    macd_fail   = (macd_hist < 0) & (macd_hist.shift(1) >= 0)
 
     # 4. Price drops below slow EMA (trend failed)
-    below_slow = close < ema_slow
+    below_slow  = close < ema_slow
 
     exit_sig = ema_bear | rsi_ob | macd_fail | below_slow
 
@@ -323,6 +322,6 @@ def generate_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── Build output ────────────────────────────────────────────────────────────
     signals = pd.DataFrame(index=df.index)
     signals["entry"] = entry.fillna(False)
-    signals["exit"] = exit_sig.fillna(False)
+    signals["exit"]  = exit_sig.fillna(False)
 
     return signals

@@ -1,0 +1,39 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run BankNifty Strategy Bot",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/banknifty_optimized_bot.py",
+      "console": "integratedTerminal",
+      "env": {
+        "OPENALGO_API_KEY": "${env:OPENALGO_API_KEY}",
+        "HOST_SERVER": "http://127.0.0.1:5000",
+        "WEBSOCKET_URL": "ws://127.0.0.1:8765",
+        "SYMBOL": "BANKNIFTY",
+        "EXCHANGE": "NSE",
+        "QUANTITY": "1",
+        "PRODUCT": "MIS",
+        "CANDLE_TIMEFRAME": "D"
+      }
+    },
+    {
+      "name": "Run MCX VWAP RSI Strategy Bot",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/mcx_vwap_rsi_strategy.py",
+      "console": "integratedTerminal",
+      "env": {
+        "OPENALGO_API_KEY": "${env:OPENALGO_API_KEY}",
+        "HOST_SERVER": "http://127.0.0.1:5000",
+        "WEBSOCKET_URL": "ws://127.0.0.1:8765",
+        "SYMBOL": "MCX",
+        "EXCHANGE": "NSE",
+        "QUANTITY": "1",
+        "PRODUCT": "MIS",
+        "CANDLE_TIMEFRAME": "15m"
+      }
+    }
+  ]
+}
