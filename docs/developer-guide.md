@@ -63,6 +63,7 @@ openalgo-quant-engine/
 │   ├── pipeline/              # Orchestrator (connects all stages)
 │   ├── storage/               # CSV backend (protocol-based)
 │   ├── parallel/              # Process pool + progress tracking
+│   ├── ml/                    # Machine learning layer (adapters, features, pipelines)
 │   └── api/                   # FastAPI routes + schemas
 ├── tests/                     # pytest test suite
 ├── config/                    # YAML research configs

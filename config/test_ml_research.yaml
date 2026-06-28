@@ -1,0 +1,70 @@
+name: SBIN Intraday ML Light Research
+description: Lightweight intraday research configuration with Machine Learning Trade Quality Classifier enabled.
+trading_styles:
+  - intraday
+
+style_overrides:
+  intraday:
+    max_hold_bars: 75
+    forced_exit_time: '15:15'
+    product_type: MIS
+    min_trades: 10  # Lowered to ensure candidates pass backtest filters
+
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: db
+  symbols:
+    - symbol: SBIN
+      exchange: NSE
+  timeframes:
+    - 15m
+    - 1h
+  start_date: '2026-01-01'
+  end_date: '2026-06-25'
+  train_pct: 0.70
+  validation_pct: 0.15
+  test_pct: 0.15
+
+generation:
+  mode: random
+  target_count: 50  # Very small for speed
+  max_conditions_per_entry: 2
+  allow_short: true
+  indicator_categories:
+    - trend
+    - momentum
+
+filters:
+  backtest:
+    min_trades: 8  # Lowered to ensure some strategies pass
+    min_sharpe: 0.3
+    max_drawdown: 0.40
+    min_profit_factor: 1.0
+
+evolution:
+  enabled: false  # Disabled for speed
+
+ranking:
+  mode: robustness_first
+  export_top_n: 2
+
+machine_learning:
+  enabled: true
+  dataset:
+    source: generated_trades
+  labels:
+    type: binary
+    future_horizon: 10
+    threshold: 0.0
+  models:
+    - random_forest
+    - extra_trees
+  tuning:
+    enabled: true
+    trials: 3  # Minimal trials for verification speed
+  explainability:
+    shap: true
+  deployment:
+    confidence_threshold: 0.55

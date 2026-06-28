@@ -119,6 +119,10 @@ class PipelineOrchestrator:
             # Stage 10: Final ranking
             self._rank_and_export(run_id, survivors, backtest_results, robustness_results)
 
+            # Stage 11: Machine Learning Research Layer (if enabled)
+            if self._config.machine_learning.enabled:
+                self._run_ml_stage(run_id, survivors, symbol_data, backtest_results)
+
             self._progress.status = "completed"
             logger.info(f"Research run {run_id} completed successfully")
 
@@ -494,3 +498,68 @@ class PipelineOrchestrator:
                     }
                 )
         self._storage.save_rejection_details(run_id, details)
+
+    def _run_ml_stage(
+        self,
+        run_id: str,
+        survivors: list[StrategyGenome],
+        symbol_data: dict[str, pd.DataFrame],
+        backtest_results: dict[str, BacktestResult],
+    ) -> None:
+        """Stage 11: Run Machine Learning Research Layer."""
+        logger.info("Stage 11: Running Machine Learning Research Layer...")
+        ml_config = self._config.machine_learning
+        if not ml_config.enabled:
+            return
+
+        # Load the primary timeframe OHLCV data
+        primary_tf = list(symbol_data.keys())[0]
+        full_df = symbol_data[primary_tf]
+
+        if ml_config.dataset.source == "ohlcv":
+            from quant_engine.ml.pipelines.training_pipeline import TrainingPipeline
+
+            pipeline = TrainingPipeline(self._config.model_dump())
+            for model_name in ml_config.models:
+                try:
+                    pipeline.run(df=full_df, model_name=model_name, run_id=run_id)
+                except Exception as e:
+                    logger.error(
+                        f"ML Training Pipeline failed for model {model_name}: {e}",
+                        exc_info=True,
+                    )
+
+        elif ml_config.dataset.source == "generated_trades":
+            from quant_engine.ml.pipelines.hybrid_pipeline import HybridPipeline
+
+            pipeline = HybridPipeline(self._config.model_dump())
+
+            top_n = self._config.ranking.export_top_n
+            hybrid_results = []
+            for s in survivors[:top_n]:
+                bt_res = backtest_results.get(s.id)
+                if not bt_res or not bt_res.trades:
+                    continue
+
+                for model_name in ml_config.models:
+                    try:
+                        comparison = pipeline.run_hybrid_filtering(
+                            strategy_id=s.id,
+                            df=full_df,
+                            trades=bt_res.trades,
+                            model_name=model_name,
+                            run_id=run_id,
+                        )
+                        if comparison:
+                            hybrid_results.append(comparison)
+                    except Exception as e:
+                        logger.error(
+                            f"ML Hybrid Pipeline failed for strategy {s.id} with model {model_name}: {e}",
+                            exc_info=True,
+                        )
+
+            # Save hybrid results to storage if any were generated
+            if hybrid_results:
+                self._storage.save_validation_results(
+                    run_id, "hybrid_ml_comparison", hybrid_results
+                )
