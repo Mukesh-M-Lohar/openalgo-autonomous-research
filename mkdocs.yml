@@ -1,30 +1,37 @@
 site_name: OpenAlgo Quant Research Engine
 site_description: Autonomous strategy discovery, validation, and export
-site_url: https://your-username.github.io/openalgo-quant-engine/
+site_url: https://github.com/Mukesh-M-Lohar/openalgo-autonomous-research.git
 docs_dir: docs
 
-repo_url: https://github.com/your-username/openalgo-quant-engine
-repo_name: openalgo-quant-engine
+repo_url: https://github.com/Mukesh-M-Lohar/openalgo-autonomous-research.git
+repo_name: openalgo-autonomous-research
 
 theme:
   name: material
+  font:
+    text: Inter
+    code: JetBrains Mono
   palette:
-    - scheme: default
-      primary: indigo
-      accent: amber
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
     - scheme: slate
-      primary: indigo
-      accent: amber
+      primary: black
+      accent: cyan
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+    - scheme: default
+      primary: white
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
   features:
     - navigation.tabs
     - navigation.sections
     - navigation.top
+    - navigation.instant
+    - navigation.tracking
+    - navigation.path
+    - toc.integrate
     - search.highlight
     - content.code.copy
 
@@ -51,9 +58,10 @@ nav:
   - API Reference:
       - REST Endpoints: api/api-reference.md
   - Guides:
-      - Adding Indicators: guides/adding-indicators.md
       - Configuration: guides/configuration.md
+      - Adding Indicators: guides/adding-indicators.md
       - Machine Learning Guide: guides/machine-learning.md
       - Python Strategy Guide: guides/python-guide.md
       - Strategy Management: guides/strategy-management.md
       - Understanding Rejections: guides/rejections.md
+  - Research Dashboard: dashboard.html
