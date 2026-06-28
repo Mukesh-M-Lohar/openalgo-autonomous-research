@@ -24,7 +24,7 @@ def compute_metrics(
     total_trades = len(trades)
 
     wins = pnls[pnls > 0]
-    losses = pnls[pnls <= 0]
+    losses = pnls[pnls < 0]
     winning_trades = len(wins)
     losing_trades = len(losses)
 
@@ -89,7 +89,7 @@ def compute_metrics(
 
     # Consecutive wins/losses
     max_consec_wins = _max_consecutive(pnls > 0)
-    max_consec_losses = _max_consecutive(pnls <= 0)
+    max_consec_losses = _max_consecutive(pnls < 0)
 
     return BacktestResult(
         strategy_id=strategy_id,
@@ -115,6 +115,7 @@ def compute_metrics(
         avg_hold_bars=round(avg_hold_bars, 2),
         max_consecutive_wins=max_consec_wins,
         max_consecutive_losses=max_consec_losses,
+        trades=trades,
     )
 
 

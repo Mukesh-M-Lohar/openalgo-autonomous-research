@@ -13,6 +13,7 @@ from quant_engine.models.strategy import (
     ConditionTree,
     IndicatorNode,
     IndicatorType,
+    LogicOp,
     StrategyGenome,
 )
 
@@ -127,7 +128,7 @@ class FastRejectValidator:
     def _check_contradictory_conditions(self, s: StrategyGenome) -> RejectionRecord | None:
         if not isinstance(s.entry_long, CompositeCondition):
             return None
-        if s.entry_long.logic != "and":
+        if s.entry_long.logic != LogicOp.AND:
             return None
 
         conditions = _extract_conditions(s.entry_long)

@@ -135,6 +135,16 @@ class TestIndicators:
         # Verify it computes correctly and has some valid values after period + 1
         assert not result.iloc[12:].isna().any()
 
+    def test_hma_computation(self, sample_df):
+        result = compute_indicator(
+            sample_df,
+            IndicatorType.HMA,
+            {"period": 9},
+            PriceSource.CLOSE,
+        )
+        assert len(result) == len(sample_df)
+        assert not result.iloc[20:].isna().any()
+
 
 class TestPatterns:
     def test_all_patterns_registered(self):

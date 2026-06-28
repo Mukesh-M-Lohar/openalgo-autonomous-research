@@ -240,7 +240,9 @@ class BacktestEngine:
                     if hasattr(index[i], "hour"):
                         parts = forced_exit_time.split(":")
                         exit_hour, exit_min = int(parts[0]), int(parts[1])
-                        if index[i].hour >= exit_hour and index[i].minute >= exit_min:
+                        if index[i].hour > exit_hour or (
+                            index[i].hour == exit_hour and index[i].minute >= exit_min
+                        ):
                             exit_price = current_close
                             exit_reason = "forced_time_exit"
 

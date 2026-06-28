@@ -31,3 +31,5 @@ autoresearch/params.json
 autoresearch/best_equity_curve.png
 autoresearch/best_strategy.json
 data/cache_15m/
+catboost_info/
+backtest_results/

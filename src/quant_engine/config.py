@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+# Load .env file so that ${VAR} interpolation in YAML configs works
+load_dotenv()
 
 
 class OpenAlgoConfig(BaseModel):
@@ -126,6 +130,55 @@ class OutputConfig(BaseModel):
     save_all_candidates: bool = True
 
 
+class MLDatasetConfig(BaseModel):
+    source: Literal["ohlcv", "generated_trades"] = "ohlcv"
+    features: dict[str, bool] = Field(
+        default_factory=lambda: {
+            "technical": True,
+            "candle": True,
+            "volatility": True,
+            "volume": True,
+            "time": True,
+            "session": True,
+            "gap": True,
+            "rolling": True,
+        }
+    )
+
+
+class MLLabelsConfig(BaseModel):
+    type: Literal["binary", "three_class", "regression", "meta_labeling"] = "binary"
+    future_horizon: int = 10
+    threshold: float = 0.005
+
+
+class MLTuningConfig(BaseModel):
+    enabled: bool = False
+    trials: int = 100
+    cv_folds: int = 3
+    objectives: list[str] = Field(default_factory=lambda: ["accuracy"])
+
+
+class MLExplainabilityConfig(BaseModel):
+    shap: bool = True
+    permutation_importance: bool = True
+    feature_importance: bool = True
+
+
+class MLDeploymentConfig(BaseModel):
+    confidence_threshold: float = 0.80
+
+
+class MachineLearningConfig(BaseModel):
+    enabled: bool = False
+    dataset: MLDatasetConfig = MLDatasetConfig()
+    labels: MLLabelsConfig = MLLabelsConfig()
+    models: list[str] = Field(default_factory=lambda: ["lightgbm", "xgboost"])
+    tuning: MLTuningConfig = MLTuningConfig()
+    explainability: MLExplainabilityConfig = MLExplainabilityConfig()
+    deployment: MLDeploymentConfig = MLDeploymentConfig()
+
+
 class ResearchConfig(BaseModel):
     """Top-level research configuration."""
 
@@ -165,6 +218,7 @@ class ResearchConfig(BaseModel):
     execution: ExecutionConfig = ExecutionConfig()
     cost_model: CostModelConfig = CostModelConfig()
     output: OutputConfig = OutputConfig()
+    machine_learning: MachineLearningConfig = Field(default_factory=MachineLearningConfig)
 
 
 def load_config(path: str | Path) -> ResearchConfig:

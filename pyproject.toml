@@ -16,6 +16,13 @@ dependencies = [
     "typer[all]>=0.9",
     "jinja2>=3.1",
     "httpx>=0.26",
+    "scikit-learn>=1.3.0",
+    "xgboost>=2.0.0",
+    "lightgbm>=4.0.0",
+    "catboost>=1.2.0",
+    "optuna>=3.5.0",
+    "shap>=0.44.0",
+    "matplotlib>=3.8.0",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +60,8 @@ select = ["E", "F", "I", "N", "W"]
 ignore = [
     "E501",  # Line too long
     "F841",  # Local variable assigned but never used
+    "N803",  # Argument name should be lowercase
+    "N806",  # Variable name in function should be lowercase
 ]
 
 [tool.pytest.ini_options]

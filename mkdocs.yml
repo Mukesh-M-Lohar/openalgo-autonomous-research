@@ -53,6 +53,7 @@ nav:
   - Guides:
       - Adding Indicators: guides/adding-indicators.md
       - Configuration: guides/configuration.md
+      - Machine Learning Guide: guides/machine-learning.md
       - Python Strategy Guide: guides/python-guide.md
       - Strategy Management: guides/strategy-management.md
       - Understanding Rejections: guides/rejections.md

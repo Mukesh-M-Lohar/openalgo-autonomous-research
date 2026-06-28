@@ -14,6 +14,7 @@ class IndicatorType(str, Enum):
     SMA = "sma"
     EMA = "ema"
     WMA = "wma"
+    HMA = "hma"
     VWMA = "vwma"
     RSI = "rsi"
     MACD = "macd"

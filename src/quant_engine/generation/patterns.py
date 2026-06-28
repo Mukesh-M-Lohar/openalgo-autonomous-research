@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pandas as pd
 
@@ -101,7 +103,7 @@ def _lower_high_lower_low(df: pd.DataFrame, params: dict) -> pd.Series:
     return (lh & ll).fillna(False)
 
 
-PATTERN_FUNCTIONS: dict[str, callable] = {
+PATTERN_FUNCTIONS: dict[str, Callable] = {
     "opening_range_breakout": _opening_range_breakout,
     "gap_up": _gap_up,
     "gap_down": _gap_down,
