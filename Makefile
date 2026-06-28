@@ -106,13 +106,13 @@ check-build: ## Verify package builds correctly
 # === Docs ===
 
 docs: ## Build documentation site (requires mkdocs)
-	pip install mkdocs mkdocs-material -q
+	$(PYTHON) -m pip install mkdocs mkdocs-material -q
 	$(PYTHON) scripts/generate_dashboard.py
-	mkdocs build
+	.venv/bin/mkdocs build
 
 docs-serve: ## Serve docs locally with hot reload
-	pip install mkdocs mkdocs-material -q
-	mkdocs serve
+	$(PYTHON) -m pip install mkdocs mkdocs-material -q
+	.venv/bin/mkdocs serve
 
 # === Cleanup ===
 
