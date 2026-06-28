@@ -342,10 +342,9 @@ class PipelineOrchestrator:
             if not bt:
                 continue
 
-            # Monte Carlo needs trades — re-run quick backtest to get them
-            engine = BacktestEngine(cost_model=self._config.cost_model)
-            engine.run(s, data)
-            trades = []  # simplified: use backtest result metrics
+            # Monte Carlo needs trades — but trades aren't stored from backtest results.
+            # TODO: extend BacktestEngine to return trades alongside metrics.
+            trades: list[dict] = []
 
             mc_result = mc.validate(bt, trades)
             ps_result = ps.validate(s, bt, data)

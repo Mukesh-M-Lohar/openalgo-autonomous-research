@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+# Load .env file so that ${VAR} interpolation in YAML configs works
+load_dotenv()
 
 
 class OpenAlgoConfig(BaseModel):

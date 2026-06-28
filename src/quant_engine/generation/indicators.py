@@ -88,8 +88,6 @@ def _macd(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
 
 
 def _macd_signal(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
-    int(params.get("fast_period", 12))
-    int(params.get("slow_period", 26))
     signal_period = int(params.get("signal_period", 9))
     macd_line = _macd(df, src, params)
     return macd_line.ewm(span=signal_period, adjust=False).mean()
