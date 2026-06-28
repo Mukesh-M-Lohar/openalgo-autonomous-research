@@ -115,6 +115,7 @@ def compute_metrics(
         avg_hold_bars=round(avg_hold_bars, 2),
         max_consecutive_wins=max_consec_wins,
         max_consecutive_losses=max_consec_losses,
+        trades=trades,
     )
 
 

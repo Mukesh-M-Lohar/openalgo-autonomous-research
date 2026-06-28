@@ -342,9 +342,8 @@ class PipelineOrchestrator:
             if not bt:
                 continue
 
-            # Monte Carlo needs trades — but trades aren't stored from backtest results.
-            # TODO: extend BacktestEngine to return trades alongside metrics.
-            trades: list[dict] = []
+            # Monte Carlo needs trades — retrieved from backtest results.
+            trades = bt.trades if hasattr(bt, "trades") else []
 
             mc_result = mc.validate(bt, trades)
             ps_result = ps.validate(s, bt, data)
@@ -469,6 +468,10 @@ class PipelineOrchestrator:
                 d = s.to_dict()
                 d["winner_category"] = category
                 winner_dicts.append(d)
+                if s.backtest and hasattr(s.backtest, "trades") and s.backtest.trades:
+                    self._storage.save_trade_log(
+                        run_id, s.strategy_id, pd.DataFrame(s.backtest.trades)
+                    )
         self._storage.save_winners(run_id, winner_dicts)
 
         logger.info(f"Ranked {len(ranked)} strategies, saved winners")

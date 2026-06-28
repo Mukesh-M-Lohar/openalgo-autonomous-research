@@ -27,6 +27,7 @@ import logging
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 # ── Add src to path so quant_engine is importable ──────────────────────────────
@@ -162,7 +163,7 @@ def compute_score(result) -> float:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. TRADE SIMULATOR  (read-only — never touched by agent)
+# 3. TRADE SIMULATOR  (aligned with engine exits)
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -172,15 +173,15 @@ def _simulate_trades(
     initial_capital: float = 100_000.0,
     commission_pct: float = 0.03,
     slippage_pct: float = 0.01,
+    atr_series: pd.Series | None = None,
+    atr_mult_sl: float = 0.0,
+    stop_loss_pct: float | None = None,
+    take_profit_pct: float | None = None,
+    trailing_stop_pct: float | None = None,
+    max_hold_bars: int | None = None,
 ) -> tuple[list[dict], pd.DataFrame]:
     """
-    Simple bar-by-bar trade simulator.
-
-    Expects signals_df to have boolean columns:
-        entry : True on bar where we go long (execute at next bar open)
-        exit  : True on bar where we close (execute at next bar open)
-
-    Returns (trades_list, equity_curve_df).
+    Simple bar-by-bar trade simulator supporting stops and exits.
     """
     trades = []
     equity = initial_capital
@@ -188,17 +189,13 @@ def _simulate_trades(
 
     entry_price: float | None = None
     entry_bar: int | None = None
+    max_price_since_entry = 0.0
     in_trade = False
 
     price_arr = price_df.reset_index()
     sig_aligned = signals_df.reindex(price_df.index, fill_value=False)
 
     for i in range(len(price_arr)):
-        idx = (
-            price_arr.iloc[i]["timestamp"]
-            if "timestamp" in price_arr.columns
-            else price_arr.index[i]
-        )
         row = price_df.iloc[i]
         sig = sig_aligned.iloc[i]
 
@@ -206,28 +203,83 @@ def _simulate_trades(
         exit_sig = bool(sig.get("exit", False))
 
         if in_trade:
-            # Exit: on explicit signal OR final bar (force close)
-            if exit_sig or i == len(price_arr) - 1:
-                exit_price = float(row["open"]) * (1 - slippage_pct / 100)
-                pnl_pct = (exit_price / entry_price - 1) * 100 - (commission_pct + slippage_pct) * 2
+            bars_held = i - entry_bar
+            current_high = float(row["high"])
+            current_low = float(row["low"])
+            current_close = float(row["close"])
+            max_price_since_entry = max(max_price_since_entry, current_high)
+
+            exit_price_val = None
+            exit_reason = ""
+
+            # Check stop loss pct
+            if stop_loss_pct is not None:
+                sl_price = entry_price * (1 - stop_loss_pct / 100)
+                if current_low <= sl_price:
+                    exit_price_val = sl_price
+                    exit_reason = "stop_loss"
+
+            # Check ATR stop loss
+            if exit_price_val is None and atr_mult_sl > 0 and atr_series is not None:
+                atr_val = atr_series.iloc[entry_bar]
+                sl_price = entry_price - atr_mult_sl * atr_val
+                if current_low <= sl_price:
+                    exit_price_val = sl_price
+                    exit_reason = "atr_stop_loss"
+
+            # Check take profit pct
+            if exit_price_val is None and take_profit_pct is not None:
+                tp_price = entry_price * (1 + take_profit_pct / 100)
+                if current_high >= tp_price:
+                    exit_price_val = tp_price
+                    exit_reason = "take_profit"
+
+            # Check trailing stop
+            if exit_price_val is None and trailing_stop_pct is not None:
+                trail_price = max_price_since_entry * (1 - trailing_stop_pct / 100)
+                if current_low <= trail_price:
+                    exit_price_val = trail_price
+                    exit_reason = "trailing_stop"
+
+            # Check max hold bars
+            if exit_price_val is None and max_hold_bars is not None:
+                if bars_held >= max_hold_bars:
+                    exit_price_val = current_close
+                    exit_reason = "max_hold"
+
+            # Check standard exit signal or final bar
+            if exit_price_val is None and (exit_sig or i == len(price_arr) - 1):
+                exit_price_val = float(row["open"]) * (1 - slippage_pct / 100)
+                exit_reason = "signal" if exit_sig else "end_of_data"
+
+            if exit_price_val is not None:
+                if exit_reason in ["stop_loss", "atr_stop_loss", "take_profit", "trailing_stop"]:
+                    # Limit/stop execution adjustment
+                    exit_price_val = exit_price_val * (1 - slippage_pct / 100)
+
+                pnl_pct = (exit_price_val / entry_price - 1) * 100 - (
+                    commission_pct + slippage_pct
+                ) * 2
                 pnl_abs = equity * pnl_pct / 100
                 equity = max(equity + pnl_abs, 0.0)
                 trades.append(
                     {
                         "entry_bar": entry_bar,
                         "exit_bar": i,
-                        "bars_held": i - entry_bar,
+                        "bars_held": bars_held,
                         "pnl_pct": round(pnl_pct, 6),
                         "pnl_abs": round(pnl_abs, 2),
                         "entry_price": entry_price,
-                        "exit_price": exit_price,
+                        "exit_price": exit_price_val,
+                        "exit_reason": exit_reason,
                     }
                 )
                 in_trade = False
 
-        if not in_trade and entry_sig:
+        if not in_trade and entry_sig and i < len(price_arr) - 1:
             entry_price = float(row["open"]) * (1 + (commission_pct + slippage_pct) / 100)
             entry_bar = i
+            max_price_since_entry = float(row["high"])
             in_trade = True
 
         equity_points.append({"equity": equity})
@@ -237,7 +289,7 @@ def _simulate_trades(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 4. EVALUATION PIPELINE  (read-only — never touched by agent)
+# 4. EVALUATION PIPELINE
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -245,10 +297,9 @@ def run_evaluation(symbol: str, exchange: str, tf: str, start: str, end: str) ->
     """
     Full evaluation pipeline:
       1. Fetch OHLCV data
-      2. Import generate_signals() from .autoresearch/strategy.py  (agent modifies this)
-      3. Simulate trades
+      2. Import generate_signals() from .autoresearch/strategy.py
+      3. Simulate trades incorporating stops
       4. Compute all performance metrics
-      5. Return composite score + full metrics dict
     """
 
     df = fetch_data(symbol, exchange, tf, start, end)
@@ -277,8 +328,35 @@ def run_evaluation(symbol: str, exchange: str, tf: str, start: str, end: str) ->
     if signals_df is None or signals_df.empty:
         return {"score": 0.0, "trades": 0, "error": "generate_signals returned empty/None"}
 
+    # Extract risk variables if defined
+    atr_mult_sl = getattr(mod, "ATR_MULT_SL", 0.0)
+    stop_loss_pct = getattr(mod, "STOP_LOSS_PCT", None)
+    take_profit_pct = getattr(mod, "TAKE_PROFIT_PCT", None)
+    trailing_stop_pct = getattr(mod, "TRAILING_STOP_PCT", None)
+    max_hold_bars = getattr(mod, "MAX_HOLD_BARS", None)
+
+    atr_series = None
+    if atr_mult_sl > 0:
+        if hasattr(mod, "_atr"):
+            atr_series = mod._atr(df)
+        else:
+            hl = df["high"] - df["low"]
+            hpc = (df["high"] - df["close"].shift(1)).abs()
+            lpc = (df["low"] - df["close"].shift(1)).abs()
+            tr = pd.concat([hl, hpc, lpc], axis=1).max(axis=1)
+            atr_series = tr.ewm(com=13, min_periods=14).mean()
+
     # ── Simulate trades ────────────────────────────────────────────────────────
-    trades, equity_curve = _simulate_trades(df, signals_df)
+    trades, equity_curve = _simulate_trades(
+        df,
+        signals_df,
+        atr_series=atr_series,
+        atr_mult_sl=atr_mult_sl,
+        stop_loss_pct=stop_loss_pct,
+        take_profit_pct=take_profit_pct,
+        trailing_stop_pct=trailing_stop_pct,
+        max_hold_bars=max_hold_bars,
+    )
 
     if not trades:
         return {"score": 0.0, "trades": 0, "error": "no trades generated by current strategy"}
@@ -318,41 +396,61 @@ def run_evaluation(symbol: str, exchange: str, tf: str, start: str, end: str) ->
 
 def main():
     parser = argparse.ArgumentParser(description="Autoresearch: evaluate the current strategy.py")
-    parser.add_argument("--symbol", default="SBIN", help="Trading symbol")
+    parser.add_argument("--symbol", default="SBIN", help="Trading symbol(s), comma-separated")
     parser.add_argument("--exchange", default="NSE", help="Exchange (NSE/BSE/MCX)")
-    parser.add_argument("--tf", default="D", help="Timeframe (D/15m/1h/5m)")
+    parser.add_argument("--tf", default="D", help="Timeframe(s), comma-separated")
     parser.add_argument("--start", default="2024-01-01", help="Start date YYYY-MM-DD")
     parser.add_argument("--end", default="2026-06-25", help="End date YYYY-MM-DD")
-    parser.add_argument("--json", action="store_true", help="Output full metrics as JSON")
+    parser.add_argument("--json", action="store_true", help="Output averaged metrics as JSON")
     args = parser.parse_args()
 
-    try:
-        metrics = run_evaluation(args.symbol, args.exchange, args.tf, args.start, args.end)
-    except FileNotFoundError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        print("SCORE: 0.0")
-        sys.exit(1)
-    except Exception as e:
-        logger.exception("Evaluation failed")
-        print(f"ERROR: {e}", file=sys.stderr)
+    symbols = [s.strip() for s in args.symbol.split(",") if s.strip()]
+    tfs = [t.strip() for t in args.tf.split(",") if t.strip()]
+
+    all_metrics = []
+    errors = []
+
+    for s in symbols:
+        for t in tfs:
+            try:
+                metrics = run_evaluation(s, args.exchange, t, args.start, args.end)
+                all_metrics.append(metrics)
+            except Exception as e:
+                errors.append(f"{s}/{t}: {e}")
+
+    if not all_metrics:
+        if errors:
+            print("ERRORS during evaluation:", file=sys.stderr)
+            for err in errors:
+                print(f"  {err}", file=sys.stderr)
         print("SCORE: 0.0")
         sys.exit(1)
 
+    # Average metrics
+    avg_metrics = {}
+    for k in all_metrics[0].keys():
+        if k in ["error"]:
+            continue
+        vals = [m[k] for m in all_metrics if k in m and not isinstance(m[k], str)]
+        if vals:
+            avg_metrics[k] = round(float(np.mean(vals)), 4)
+
     if args.json:
-        print(json.dumps(metrics, indent=2))
+        print(json.dumps(avg_metrics, indent=2))
     else:
         print(f"\n{'─' * 52}")
-        print(f"  Symbol    : {args.symbol}/{args.exchange}  [{args.tf}]")
+        print(f"  Symbols   : {', '.join(symbols)}/{args.exchange}")
+        print(f"  TFs       : {', '.join(tfs)}")
         print(f"  Period    : {args.start} -> {args.end}")
         print(f"{'─' * 52}")
-        for k, v in metrics.items():
+        for k, v in avg_metrics.items():
             if k == "score":
                 continue
             print(f"  {k:<22} : {v}")
         print(f"{'─' * 52}")
 
-    # ALWAYS print SCORE: <float> as the very last line (parsed by loop.py)
-    print(f"SCORE: {metrics['score']}")
+    # ALWAYS print SCORE: <float> as the very last line
+    print(f"SCORE: {avg_metrics.get('score', 0.0)}")
 
 
 if __name__ == "__main__":

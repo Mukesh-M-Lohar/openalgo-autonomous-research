@@ -30,6 +30,17 @@ LOG_FILE = AUTORESEARCH_DIR / "experiment_log.jsonl"
 STRATEGY_FILE = AUTORESEARCH_DIR / "strategy.py"
 STRATEGY_BACKUP = AUTORESEARCH_DIR / "strategy.py.bak"
 
+# Recursive watcher protection
+ignore_changes = False
+
+try:
+    from watchdog.events import FileSystemEventHandler
+    from watchdog.observers import Observer
+
+    HAS_WATCHDOG = True
+except ImportError:
+    HAS_WATCHDOG = False
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
@@ -124,9 +135,15 @@ def backup_strategy():
 
 def restore_strategy():
     """Restore strategy.py from the last backup."""
-    if STRATEGY_BACKUP.exists():
-        shutil.copy2(STRATEGY_BACKUP, STRATEGY_FILE)
-        print("  ↩  Reverted strategy.py to last backup")
+    global ignore_changes
+    ignore_changes = True
+    try:
+        if STRATEGY_BACKUP.exists():
+            shutil.copy2(STRATEGY_BACKUP, STRATEGY_FILE)
+            print("  ↩  Reverted strategy.py to last backup")
+    finally:
+        time.sleep(0.1)
+        ignore_changes = False
 
 
 def print_bar(iteration: int, score: float, best: float, metrics: dict):
@@ -149,24 +166,27 @@ def print_bar(iteration: int, score: float, best: float, metrics: dict):
 
 def main():
     parser = argparse.ArgumentParser(description="Autoresearch loop watcher")
-    parser.add_argument("--symbol", default="SBIN", help="Symbol")
+    parser.add_argument("--symbol", default="SBIN", help="Symbol(s), comma-separated")
     parser.add_argument("--exchange", default="NSE", help="Exchange")
-    parser.add_argument("--tf", default="D", help="Timeframe")
-    parser.add_argument("--start", default="2020-01-01", help="Start date")
-    parser.add_argument("--end", default="2024-12-31", help="End date")
+    parser.add_argument("--tf", default="D", help="Timeframe(s), comma-separated")
+    parser.add_argument("--start", default="2024-01-01", help="Start date")
+    parser.add_argument("--end", default="2026-06-25", help="End date")
     parser.add_argument("--max-iters", type=int, default=0, help="0=unlimited")
     parser.add_argument("--baseline", action="store_true", help="Run baseline only")
     parser.add_argument(
-        "--interval", type=float, default=5.0, help="Seconds to wait between polls (default: 5)"
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Seconds to wait between polls if watchdog not used (default: 2)",
     )
     args = parser.parse_args()
 
     print(f"\n{'═' * 60}")
     print("  AUTORESEARCH BACKTEST LOOP")
-    print(f"  Symbol: {args.symbol}/{args.exchange}  TF: {args.tf}")
-    print(f"  Period: {args.start} -> {args.end}")
+    print(f"  Symbols: {args.symbol}  Exchange: {args.exchange}  TFs: {args.tf}")
+    print(f"  Period : {args.start} -> {args.end}")
     print(f"{'═' * 60}")
-    print(f"  Log  : {LOG_FILE}")
+    print(f"  Log    : {LOG_FILE}")
     print(f"{'─' * 60}")
 
     # ── Baseline ────────────────────────────────────────────────────────────────
@@ -181,51 +201,96 @@ def main():
         print(f"\n  Baseline score: {score}")
         return
 
-    # ── Watch loop ──────────────────────────────────────────────────────────────
-    print(f"\n  Watching for strategy.py changes every {args.interval}s...")
-    print("  The AI agent should now modify .autoresearch/strategy.py")
-    print("  This loop will score each version automatically.\n")
+    # Watch logic state
+    state = {
+        "best_score": best_score,
+        "best_iteration": best_iteration,
+        "iteration": 0,
+        "last_mtime": STRATEGY_FILE.stat().st_mtime if STRATEGY_FILE.exists() else 0,
+    }
 
-    last_mtime = STRATEGY_FILE.stat().st_mtime if STRATEGY_FILE.exists() else 0
-    iteration = 0
+    def evaluate_change():
+        global ignore_changes
+        if ignore_changes:
+            return
 
-    try:
-        while True:
-            time.sleep(args.interval)
+        state["iteration"] += 1
+        iter_num = state["iteration"]
+        print(f"\n  Detected strategy.py change — running evaluation #{iter_num}...")
+        backup_strategy()
 
-            if not STRATEGY_FILE.exists():
-                continue
+        new_score, new_metrics = run_prepare(
+            args.symbol, args.exchange, args.tf, args.start, args.end
+        )
 
-            mtime = STRATEGY_FILE.stat().st_mtime
-            if mtime <= last_mtime:
-                continue  # no change
+        if new_score > state["best_score"]:
+            delta = new_score - state["best_score"]
+            state["best_score"] = new_score
+            state["best_iteration"] = iter_num
+            log_iteration(iter_num, new_score, new_metrics, note="improved")
+            print_bar(iter_num, new_score, new_score, new_metrics)
+            print(f"  Best so far: {new_score:.4f} (iteration {iter_num})")
+        else:
+            log_iteration(iter_num, new_score, new_metrics, note="reverted")
+            print_bar(iter_num, new_score, state["best_score"], new_metrics)
+            restore_strategy()
 
-            iteration += 1
-            last_mtime = mtime
-            print(f"\n  Detected strategy.py change — running evaluation #{iteration}...")
-            backup_strategy()
+        if args.max_iters > 0 and iter_num >= args.max_iters:
+            print(f"\n  Reached max iterations ({args.max_iters}). Stopping.")
+            sys.exit(0)
 
-            score, metrics = run_prepare(args.symbol, args.exchange, args.tf, args.start, args.end)
+    # ── Watch Mode Selection ───────────────────────────────────────────────────
+    if HAS_WATCHDOG:
+        print("\n  [Watchdog] Active - watching strategy.py for instant changes...")
+        print("  The AI agent should now modify .autoresearch/strategy.py\n")
 
-            if score > best_score:
-                best_score = score
-                best_iteration = iteration
-                log_iteration(iteration, score, metrics, note="improved")
-                print_bar(iteration, score, best_score, metrics)
-                print(f"  Best so far: {best_score:.4f} (iteration {best_iteration})")
-            else:
-                log_iteration(iteration, score, metrics, note="reverted")
-                print_bar(iteration, score, best_score, metrics)
-                restore_strategy()
+        class StrategyHandler(FileSystemEventHandler):
+            def on_modified(self, event):
+                if ignore_changes:
+                    return
+                # Only trigger on target strategy.py file
+                if Path(event.src_path).resolve() == STRATEGY_FILE.resolve():
+                    # Debounce duplicate filesystem events
+                    time.sleep(0.05)
+                    evaluate_change()
 
-            if args.max_iters > 0 and iteration >= args.max_iters:
-                print(f"\n  Reached max iterations ({args.max_iters}). Stopping.")
-                break
+        event_handler = StrategyHandler()
+        observer = Observer()
+        observer.schedule(event_handler, path=str(AUTORESEARCH_DIR), recursive=False)
+        observer.start()
 
-    except KeyboardInterrupt:
-        print("\n\n  Loop stopped by user.")
-        print(f"  Best score: {best_score:.4f} achieved at iteration {best_iteration}")
-        print(f"  Full log: {LOG_FILE}")
+        try:
+            while True:
+                time.sleep(1.0)
+        except KeyboardInterrupt:
+            observer.stop()
+            observer.join()
+    else:
+        print(f"\n  [Polling] Active - polling strategy.py every {args.interval}s...")
+        print("  The AI agent should now modify .autoresearch/strategy.py\n")
+
+        try:
+            while True:
+                time.sleep(args.interval)
+
+                if not STRATEGY_FILE.exists():
+                    continue
+
+                mtime = STRATEGY_FILE.stat().st_mtime
+                if mtime <= state["last_mtime"]:
+                    continue  # no change
+
+                state["last_mtime"] = mtime
+                evaluate_change()
+
+        except KeyboardInterrupt:
+            pass
+
+    print("\n\n  Loop stopped.")
+    print(
+        f"  Best score: {state['best_score']:.4f} achieved at iteration {state['best_iteration']}"
+    )
+    print(f"  Full log: {LOG_FILE}")
 
 
 if __name__ == "__main__":

@@ -105,6 +105,15 @@ def collect_run_data(runs_dir: Path) -> list:
                     winner_cat = str(row.get("winner_category", "unknown"))
 
                     if sid not in strat_map:
+                        trades_path = run_path / "trade_logs" / f"{sid}_trades.csv"
+                        trades_list = []
+                        if trades_path.exists():
+                            try:
+                                trades_df = pd.read_csv(trades_path)
+                                trades_df = trades_df.fillna("")
+                                trades_list = trades_df.head(100).to_dict(orient="records")
+                            except Exception as te:
+                                logger.error(f"Error loading trades for {sid}: {te}")
                         strat_map[sid] = {
                             "strategy_id": sid,
                             "rank": int(row.get("rank", 999)),
@@ -116,6 +125,7 @@ def collect_run_data(runs_dir: Path) -> list:
                             "validation": validation_data,
                             "signal_logic": signal_logic_data,
                             "genome": genome_data,
+                            "trades": trades_list,
                         }
                     else:
                         if winner_cat not in strat_map[sid]["winner_categories"]:
@@ -968,6 +978,7 @@ def generate_html(run_data: list, output_path: Path):
             <button class="tab-btn" onclick="switchTab('winners')">Winning Strategies</button>
             <button class="tab-btn" onclick="switchTab('rejections')">Rejection Analysis</button>
             <button class="tab-btn" onclick="switchTab('config')">Run Configuration</button>
+            <button class="tab-btn" onclick="switchTab('guide')">Metrics Guide</button>
         </div>
 
         <!-- Tab contents -->
@@ -1090,6 +1101,124 @@ def generate_html(run_data: list, output_path: Path):
                 <pre class="config-code-block" id="config-code-block">
                     <!-- Config yaml injected here -->
                 </pre>
+            </div>
+        </div>
+
+        <!-- METRICS GUIDE TAB -->
+        <div id="tab-guide" class="tab-content">
+            <div class="panel">
+                <div class="panel-title" style="font-size: 1.4rem; font-weight: 700; margin-bottom: 12px; background: linear-gradient(to right, #ffffff, var(--accent-primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Metrics & Validation Reference Guide</div>
+                <p class="panel-desc" style="margin-bottom: 24px;">An educational guide explaining the quantitative indicators, robustness tests, and validation metrics used to evaluate and filter strategy candidates.</p>
+
+                <div class="guide-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+                    <!-- COLUMN 1: SIMULATION & BACKTEST METRICS -->
+                    <div class="guide-column">
+                        <h3 style="color: var(--accent-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 16px;">Simulation & Backtest Metrics</h3>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Net Profit</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">The net percentage return generated during the simulation period relative to the starting account balance.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Direct profit. For example, 25.14% means a starting account of ₹100,000 grew by ₹25,140 (before transaction taxes and fees).</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Profit Factor (PF)</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">Gross profit divided by gross loss. (Gross Profits / Gross Losses).</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Return-to-risk efficiency. A PF of 2.05 means the strategy gained ₹2.05 for every ₹1.00 it lost. Values > 1.5 are considered solid, while > 2.0 indicate highly efficient setups.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Win Rate</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">Percentage of total trades that resulted in a positive gain. (Winning Trades / Total Trades).</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Psychological comfort. A 45.2% win rate is standard. High-expectancy trend strategies often have lower win rates (35-45%) but offset them by making the average win far larger than the average loss.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Total Trades</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">The absolute count of round-trip trades executed during the backtest window.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Statistical significance. A strategy with only 5 trades is statistically unreliable. High trade counts (e.g. 42 or more) provide confidence that the results represent an actual edge, not a fluke.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Average Trade PnL</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">The average percent return expected from a single round-trip trade.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Friction tolerance. If a strategy's average trade PnL is 0.60%, it is highly resilient to broker commissions, stamp duties, and exchange slippage (which typically consume 0.05% - 0.15% per trade).</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Recovery Factor</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">Net Profit divided by the maximum peak-to-trough drawdown dollar amount.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Drawdown recovery speed. A recovery factor of 2.17 means the profit generated over the period was more than double the maximum drawdown experienced, showing a strong ability to bounce back.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Expectancy</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">The statistical edge of the strategy, calculating the average expected payout per dollar risked.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">A positive expectancy of 0.599 indicates that for every ₹1.00 risked, the system returns ₹1.60 (net ₹0.60 profit). This represents the math edge in your favor.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Ulcer Index</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">A volatility metric that focuses solely on downside risk, combining the depth and duration of equity drawdowns.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Psychological stress level. Unlike standard deviation, the Ulcer Index penalizes long-lasting drawdowns. A low Ulcer Index (e.g. 4.22) is excellent and indicates that drawdowns are shallow and recover quickly, reducing emotional trading errors.</p>
+                        </div>
+                    </div>
+
+                    <!-- COLUMN 2: ROBUSTNESS & STRESS TESTS -->
+                    <div class="guide-column">
+                        <h3 style="color: var(--accent-primary); border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 16px;">Robustness & Stress Tests</h3>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Overall Robustness Score</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">A composite index score integrating Parameter Stability, Stress Test, and Monte Carlo checks.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">A score of 84.2 indicates high overall robustness, suggesting the strategy has a very low probability of failing unexpectedly when deployed live.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Parameter Stability Score</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">Tests if modifying parameters (e.g. changing an EMA from 20 to 18 or 22) maintains stable profitability.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Protection against curve-fitting. A high score (e.g. 94.6%) confirms that the strategy operates in a profitable parameter region and does not rely on a hyper-optimized "exact number" that would break in real trading.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Stress Test Score (Noise Resistance)</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">Evaluates performance after adding random price noise, spread adjustments, and execution delays.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Resilience to real-world friction. A score of 58.1% means that while the strategy is profitable under stress, random market noise and slippage will reduce performance, indicating a moderate sensitivity to execution speed.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Out-of-Sample (OOS) Sharpe & Decay</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">Evaluates the Sharpe ratio on a slice of historical data (e.g., the last 15-20% of data) that was never seen by the generation engine.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Predictive validity. A score of 0.00 OOS Sharpe with 0% decay indicates that separate validation split filters were not configured for this specific run, or no out-of-sample decay was observed.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Walk-Forward Score / Consistency</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">Simulates periodic re-optimization by moving a rolling training and validation window forward in time.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Adaptive consistency. A score of 0.0 / 0% indicates that walk-forward analysis was bypassed or parameters were not updated, which means the strategy's adaptation capability across changing market regimes has not been measured.</p>
+                        </div>
+
+                        <div class="guide-card" style="background: rgba(255, 255, 255, 0.01); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+                            <h4 style="color: #fff; margin-bottom: 6px;">Monte Carlo Score</h4>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 8px;">Runs 1,000s of iterations of the trade sequence while randomly shuffling trade order, dropping 10-20% of trades, or varying execution levels.</p>
+                            <span style="font-size: 0.75rem; color: var(--accent-secondary); font-weight: 600; display: block; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 6px;">Real-World Meaning:</span>
+                            <p style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; margin-top: 4px;">Ruin and luck protection. A score of 100% means that in 100% of the simulated paths, the strategy remained profitable and did not experience risk ruin or severe drawdown degradation, indicating high confidence in the trade edge.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1462,6 +1591,49 @@ def generate_html(run_data: list, output_path: Path):
             // Generate Winner badges html
             const catBadgesHtml = w.winner_categories.map(cat => `<span class="winner-cat-badge">${{cat.toUpperCase().replace('_', ' ')}}</span>`).join('');
 
+            // Generate trades table html
+            let tradesHtml = '';
+            if (w.trades && w.trades.length > 0) {{
+                tradesHtml = `
+                    <div class="detail-sub-section" style="margin-top: 24px;">
+                        <div class="detail-sub-title">Recent Backtest Trades (${{w.trades.length}})</div>
+                        <div style="overflow-x: auto; margin-top: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(255,255,255,0.01);">
+                            <table class="metrics-list-table" style="margin-bottom: 0;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid var(--border-color); background: rgba(255,255,255,0.02);">
+                                        <th style="padding: 10px; font-size: 0.8rem; font-weight: 700; text-align: left; color: var(--text-secondary);">Entry Time</th>
+                                        <th style="padding: 10px; font-size: 0.8rem; font-weight: 700; text-align: left; color: var(--text-secondary);">Exit Time</th>
+                                        <th style="padding: 10px; font-size: 0.8rem; font-weight: 700; text-align: right; color: var(--text-secondary);">PnL %</th>
+                                        <th style="padding: 10px; font-size: 0.8rem; font-weight: 700; text-align: center; color: var(--text-secondary);">Bars</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${{w.trades.map(t => {{
+                                        const pnl = parseFloat(t.pnl_pct || 0);
+                                        const pnlClass = pnl >= 0 ? 'metric-up' : 'metric-down';
+                                        return '<tr style="border-bottom: 1px dotted var(--border-color);">' +
+                                            '<td style="padding: 10px; font-size: 0.8rem; font-family: monospace;">' + (t.entry_time || '') + '</td>' +
+                                            '<td style="padding: 10px; font-size: 0.8rem; font-family: monospace;">' + (t.exit_time || '') + '</td>' +
+                                            '<td class="' + pnlClass + '" style="padding: 10px; font-size: 0.8rem; font-weight: 700; text-align: right; font-family: monospace;">' + (pnl >= 0 ? '+' : '') + pnl.toFixed(2) + '%</td>' +
+                                            '<td style="padding: 10px; font-size: 0.8rem; text-align: center; font-family: monospace;">' + (t.bars_held || 0) + '</td>' +
+                                            '</tr>';
+                                    }}).join('')}}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }} else {{
+                tradesHtml = `
+                    <div class="detail-sub-section" style="margin-top: 24px;">
+                        <div class="detail-sub-title">Recent Backtest Trades</div>
+                        <div style="padding: 20px; text-align: center; color: var(--text-muted); border: 1px dashed var(--border-color); border-radius: 8px; margin-top: 8px;">
+                            No detailed trade logs recorded for this strategy.
+                        </div>
+                    </div>
+                `;
+            }}
+
             const bt = w.backtest;
             const val = w.validation;
 
@@ -1594,6 +1766,8 @@ def generate_html(run_data: list, output_path: Path):
                         </div>
                     </div>
                 </div>
+
+                ${{tradesHtml}}
             `;
         }}
 

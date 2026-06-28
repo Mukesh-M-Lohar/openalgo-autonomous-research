@@ -1,0 +1,55 @@
+name: SBIN Intraday Light Research
+description: Lightweight intraday research configuration for SBIN using cached 15m and 1h data.
+trading_styles:
+  - intraday
+
+style_overrides:
+  intraday:
+    max_hold_bars: 75
+    forced_exit_time: '15:15'
+    product_type: MIS
+    min_trades: 20
+
+data:
+  openalgo:
+    host: http://127.0.0.1:5000
+    api_key: ${OPENALGO_API_KEY}
+    source: db
+  symbols:
+    - symbol: SBIN
+      exchange: NSE
+  timeframes:
+    - 15m
+    - 1h
+  start_date: '2026-01-01'
+  end_date: '2026-06-25'
+  train_pct: 0.70
+  validation_pct: 0.15
+  test_pct: 0.15
+
+generation:
+  mode: random
+  target_count: 200
+  max_conditions_per_entry: 2
+  allow_short: true
+  indicator_categories:
+    - trend
+    - momentum
+
+filters:
+  backtest:
+    min_trades: 15
+    min_sharpe: 0.8
+    max_drawdown: 0.25
+    min_profit_factor: 1.2
+
+evolution:
+  enabled: true
+  generations: 2
+  population_size: 50
+  mutation_rate: 0.3
+  crossover_rate: 0.5
+
+ranking:
+  mode: robustness_first
+  export_top_n: 5

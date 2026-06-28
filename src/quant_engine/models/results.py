@@ -33,6 +33,7 @@ class BacktestResult:
     avg_hold_bars: float = 0.0
     max_consecutive_wins: int = 0
     max_consecutive_losses: int = 0
+    trades: list[dict] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict:
         return {

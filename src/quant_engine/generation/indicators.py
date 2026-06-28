@@ -62,6 +62,23 @@ def _wma(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
     return src.rolling(window=period).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
 
 
+def _wma_series(src: pd.Series, period: int) -> pd.Series:
+    if period <= 1:
+        return src
+    weights = np.arange(1, period + 1, dtype=float)
+    return src.rolling(window=period).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=True)
+
+
+def _hma(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
+    period = int(params.get("period", 9))
+    half_period = int(period / 2)
+    sqrt_period = int(np.sqrt(period))
+    wma_half = _wma_series(src, half_period)
+    wma_full = _wma_series(src, period)
+    diff = 2 * wma_half - wma_full
+    return _wma_series(diff, sqrt_period)
+
+
 def _vwma(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
     period = int(params.get("period", 20))
     vol = df["volume"]
@@ -265,6 +282,7 @@ INDICATOR_FUNCTIONS: dict = {
     IndicatorType.SMA: _sma,
     IndicatorType.EMA: _ema,
     IndicatorType.WMA: _wma,
+    IndicatorType.HMA: _hma,
     IndicatorType.VWMA: _vwma,
     IndicatorType.RSI: _rsi,
     IndicatorType.MACD: _macd,
@@ -299,6 +317,7 @@ INDICATOR_PARAM_RANGES: dict[IndicatorType, dict[str, tuple[float, float, float]
     IndicatorType.SMA: {"period": (5, 200, 5)},
     IndicatorType.EMA: {"period": (5, 200, 5)},
     IndicatorType.WMA: {"period": (5, 200, 5)},
+    IndicatorType.HMA: {"period": (5, 200, 5)},
     IndicatorType.VWMA: {"period": (5, 50, 5)},
     IndicatorType.RSI: {"period": (7, 28, 7)},
     IndicatorType.MACD: {
@@ -343,6 +362,7 @@ INDICATOR_CATEGORIES: dict[str, list[IndicatorType]] = {
         IndicatorType.SMA,
         IndicatorType.EMA,
         IndicatorType.WMA,
+        IndicatorType.HMA,
         IndicatorType.MACD,
         IndicatorType.MACD_SIGNAL,
         IndicatorType.MACD_HIST,

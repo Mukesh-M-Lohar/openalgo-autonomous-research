@@ -95,6 +95,15 @@ class TestBacktestEngine:
         # Just verify it doesn't crash
         assert result is None or isinstance(result, BacktestResult)
 
+    def test_engine_returns_trades(self, simple_strategy, trending_data):
+        engine = BacktestEngine()
+        result = engine.run(simple_strategy, {"15m": trending_data})
+        if result is not None:
+            assert isinstance(result.trades, list)
+            assert len(result.trades) > 0
+            assert "entry_time" in result.trades[0]
+            assert "pnl_pct" in result.trades[0]
+
     def test_engine_with_cost_model(self, simple_strategy, trending_data):
         cost = CostModelConfig(commission_pct=0.05, slippage_pct=0.03)
         engine = BacktestEngine(cost_model=cost)
