@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -479,8 +480,6 @@ def main():
                 "sharpe_ratio": float(res["metrics"]["sharpe_ratio"]),
             },
         }
-
-    import json
 
     with open(artifact_dir / "backtest_summary.json", "w") as f:
         json.dump(summary, f, indent=4)
