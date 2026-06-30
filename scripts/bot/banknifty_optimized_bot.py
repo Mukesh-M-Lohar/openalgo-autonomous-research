@@ -52,8 +52,8 @@ WHATSAPP_PHONES: list[str] = [
 ]
 
 # Trade Parameters
-SYMBOL = os.getenv("SYMBOL", "BANKNIFTY")
-EXCHANGE = os.getenv("EXCHANGE", "NSE_INDEX")  # Default exchange for trading
+SYMBOL = "BANKNIFTY"
+EXCHANGE = "NSE_INDEX"  # Default exchange for trading
 QUANTITY = int(os.getenv("QUANTITY", "1"))
 PRODUCT = os.getenv("PRODUCT", "MIS")  # Intraday
 CANDLE_TIMEFRAME = os.getenv("CANDLE_TIMEFRAME", "D")  # Optimized timeframe is D
@@ -165,6 +165,31 @@ class OpenAlgoStrategyBot:
                 end_date=end_date.strftime("%Y-%m-%d"),
                 source=source,
             )
+
+            # On-the-fly Daily aggregation fallback if Daily data is missing in DB
+            if (CANDLE_TIMEFRAME == "D") and (
+                (isinstance(history_data, dict) and history_data.get("status") == "error") or
+                (isinstance(history_data, pd.DataFrame) and history_data.empty)
+            ):
+                logger.info("Daily data not found in database. Fetching 15m data to aggregate to Daily on-the-fly...")
+                history_data = self.client.history(
+                    symbol=SYMBOL,
+                    exchange=EXCHANGE,
+                    interval="15m",
+                    start_date=start_date.strftime("%Y-%m-%d"),
+                    end_date=end_date.strftime("%Y-%m-%d"),
+                    source=source,
+                )
+                if isinstance(history_data, pd.DataFrame) and not history_data.empty:
+                    # Resample 15-minute candles to Daily candles
+                    history_data = history_data.resample('D').agg({
+                        'open': 'first',
+                        'high': 'max',
+                        'low': 'min',
+                        'close': 'last',
+                        'volume': 'sum'
+                    }).dropna()
+
             if isinstance(history_data, pd.DataFrame) and not history_data.empty:
                 df = history_data.reset_index()  # bring 'timestamp' back as a column
                 # Parse numeric columns
