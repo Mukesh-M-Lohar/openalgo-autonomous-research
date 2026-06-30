@@ -202,6 +202,10 @@ class StrategyBot:
         self.daily_trade_taken = False
         self.last_trade_date = None
 
+        # Historical Data Cache
+        self._cache_df = None
+        self._cache_last_fetched = 0.0
+
         logger.info(
             f"[{STRATEGY_NAME}] started | {SYMBOL}:{EXCHANGE} | "
             f"qty={QUANTITY} product={PRODUCT} tf={CANDLE_TIMEFRAME}"
@@ -230,14 +234,25 @@ class StrategyBot:
     # ------------------------------------------------------------------ Data fetch
     def get_historical_data(self) -> pd.DataFrame:
         try:
+            # Check if cache is valid (within 30s for 1m, 5 mins for larger timeframes)
+            cache_expiry = 30 if "1m" in CANDLE_TIMEFRAME else 300
+            current_time = time.time()
+            if (
+                self._cache_df is not None
+                and (current_time - self._cache_last_fetched < cache_expiry)
+            ):
+                return self._cache_df.copy()
+
             end = datetime.now()
             start = end - timedelta(days=LOOKBACK_DAYS)
+            source = "db" if EXCHANGE.endswith("_INDEX") else "api"
             result = self.client.history(
                 symbol=SYMBOL,
                 exchange=EXCHANGE,
                 interval=CANDLE_TIMEFRAME,
                 start_date=start.strftime("%Y-%m-%d"),
                 end_date=end.strftime("%Y-%m-%d"),
+                source=source,
             )
             # SDK returns DataFrame with 'timestamp' as index on success.
             if isinstance(result, pd.DataFrame) and not result.empty:
@@ -245,6 +260,9 @@ class StrategyBot:
                 for col in ["open", "high", "low", "close", "volume"]:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
+
+                self._cache_df = df.copy()
+                self._cache_last_fetched = current_time
                 return df
             if isinstance(result, dict):
                 logger.warning(f"History API: {result.get('message', result)}")

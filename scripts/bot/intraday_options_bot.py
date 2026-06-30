@@ -601,6 +601,12 @@ class IntradayOptionsBot:
         self.ltp_map: dict[str, float] = {}  # Multi-underlying LTP cache
         self.instrument = [{"exchange": UNDERLYING_EXCHANGE, "symbol": UNDERLYING}]
 
+        # Historical Data Cache
+        self._cache_df = None
+        self._cache_symbol = None
+        self._cache_exchange = None
+        self._cache_last_fetched = 0.0
+
         # Scan results (filled during pre-market)
         self.todays_picks: list[dict] = []
 
@@ -666,6 +672,17 @@ class IntradayOptionsBot:
         self, symbol: str = UNDERLYING, exchange: str = UNDERLYING_EXCHANGE
     ) -> pd.DataFrame:
         try:
+            # Check if cache is valid (within 30s for 1m, 5 mins for larger timeframes)
+            cache_expiry = 30 if "1m" in CANDLE_TIMEFRAME else 300
+            current_time = time.time()
+            if (
+                self._cache_df is not None
+                and self._cache_symbol == symbol
+                and self._cache_exchange == exchange
+                and (current_time - self._cache_last_fetched < cache_expiry)
+            ):
+                return self._cache_df.copy()
+
             end_date = datetime.now()
             start_date = end_date - timedelta(days=LOOKBACK_DAYS)
             source = "db" if exchange.endswith("_INDEX") else "api"
@@ -682,6 +699,11 @@ class IntradayOptionsBot:
                 for col in ["open", "high", "low", "close", "volume"]:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
+
+                self._cache_df = df.copy()
+                self._cache_symbol = symbol
+                self._cache_exchange = exchange
+                self._cache_last_fetched = current_time
                 return df
             if isinstance(history, dict):
                 logger.warning(
