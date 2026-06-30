@@ -124,3 +124,31 @@ clean: ## Remove build artifacts and caches
 clean-data: ## Remove all research run data (DESTRUCTIVE)
 	rm -rf data/runs/* data/cache/* data/exports/*
 	@echo "Data directories cleared."
+
+# === Bot Generation ===
+
+generate-bot: ## Generate a bot script (e.g. make generate-bot symbol=SBIN exchange=NSE interval=5m strategy=MyStrategy whatsapp=919876543210)
+	@SYMBOL="$(symbol)"; \
+	if [ -z "$$SYMBOL" ]; then SYMBOL="$(symbols)"; fi; \
+	if [ -z "$$SYMBOL" ]; then SYMBOL="$(Symbols)"; fi; \
+	if [ -z "$$SYMBOL" ]; then \
+		echo "Usage: make generate-bot symbol=<SYMBOL> [exchange=<EXCHANGE>] [interval=<INTERVAL>] [strategy=<STRATEGY>] [whatsapp=<NUMBERS>]"; \
+		exit 1; \
+	fi; \
+	EXCHANGE="$(exchange)"; \
+	if [ -z "$$EXCHANGE" ]; then EXCHANGE="$(Exchange)"; fi; \
+	INTERVAL="$(interval)"; \
+	if [ -z "$$INTERVAL" ]; then INTERVAL="$(Interval)"; fi; \
+	STRATEGY="$(strategy)"; \
+	if [ -z "$$STRATEGY" ]; then STRATEGY="$(strategy_name)"; fi; \
+	if [ -z "$$STRATEGY" ]; then STRATEGY="$(stragery)"; fi; \
+	WHATSAPP="$(whatsapp)"; \
+	if [ -z "$$WHATSAPP" ]; then WHATSAPP="$(whatsapp_numbers)"; fi; \
+	if [ -z "$$WHATSAPP" ]; then WHATSAPP="$(whatsapp_number)"; fi; \
+	if [ -z "$$WHATSAPP" ]; then WHATSAPP="$(whatsapp_nums)"; fi; \
+	ARGS="$$SYMBOL"; \
+	if [ -n "$$EXCHANGE" ]; then ARGS="$$ARGS --exchange $$EXCHANGE"; fi; \
+	if [ -n "$$INTERVAL" ]; then ARGS="$$ARGS --interval $$INTERVAL"; fi; \
+	if [ -n "$$STRATEGY" ]; then ARGS="$$ARGS --strategy $$STRATEGY"; fi; \
+	if [ -n "$$WHATSAPP" ]; then ARGS="$$ARGS --whatsapp $$WHATSAPP"; fi; \
+	$(PYTHON) scripts/generate_bot.py $$ARGS

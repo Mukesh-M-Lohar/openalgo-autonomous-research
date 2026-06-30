@@ -284,6 +284,11 @@ class PrecisionSniperBot:
         self.daily_trade_taken = False
         self.last_trade_date = None
 
+        # Historical Data Cache
+        self._cache_df = None
+        self._cache_tf = None
+        self._cache_last_fetched = 0.0
+
         # Strategy dynamic stop/targets tracking
         self.sl_price = 0.0
         self.trail_price = 0.0
@@ -323,14 +328,26 @@ class PrecisionSniperBot:
 
     def get_historical_data(self, tf: str = CANDLE_TIMEFRAME) -> pd.DataFrame:
         try:
+            # Check if cache is valid (within 30s for 1m, 5 mins for larger timeframes)
+            cache_expiry = 30 if "1m" in tf else 300
+            current_time = time.time()
+            if (
+                self._cache_df is not None
+                and self._cache_tf == tf
+                and (current_time - self._cache_last_fetched < cache_expiry)
+            ):
+                return self._cache_df.copy()
+
             end_date = datetime.now()
             start_date = end_date - timedelta(days=LOOKBACK_DAYS)
+            source = "db" if EXCHANGE.endswith("_INDEX") else "api"
             history_data = self.client.history(
                 symbol=SYMBOL,
                 exchange=EXCHANGE,
                 interval=tf,
                 start_date=start_date.strftime("%Y-%m-%d"),
                 end_date=end_date.strftime("%Y-%m-%d"),
+                source=source,
             )
             if isinstance(history_data, pd.DataFrame) and not history_data.empty:
                 df = history_data.reset_index()  # bring 'timestamp' back as a column
@@ -338,6 +355,10 @@ class PrecisionSniperBot:
                 for col in ["open", "high", "low", "close", "volume"]:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
+
+                self._cache_df = df.copy()
+                self._cache_tf = tf
+                self._cache_last_fetched = current_time
                 return df
             # Error dict returned by SDK (e.g. no_data, api_error)
             if isinstance(history_data, dict):

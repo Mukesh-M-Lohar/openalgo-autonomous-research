@@ -124,6 +124,20 @@ make docs
 cd docs/_site && python -m http.server 8080
 ```
 
+### Generating Strategy Bots
+
+You can dynamically generate standalone, production-ready strategy bots (preconfigured with index DB fallback and client-side memory caching to prevent broker API rate-limiting) from the production template.
+
+```bash
+# Basic generation (defaults to NSE exchange, 15m interval)
+make generate-bot symbol=SBIN
+
+# Full customization (supports flexible argument casing)
+make generate-bot symbol=SBIN exchange=NSE interval=5m strategy=SBIN_Scalper_v2 whatsapp=919999999999,918888888888
+```
+
+The generated script is saved to `scripts/bot/<symbol>_bot.py`.
+
 ## Adding a New Indicator
 
 1. Add the enum value to `models/strategy.py`:
