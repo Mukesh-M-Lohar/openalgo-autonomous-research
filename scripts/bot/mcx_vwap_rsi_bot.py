@@ -1,7 +1,7 @@
 """
-BANKNIFTY Optimized Intraday/Daily Strategy Bot for OpenAlgo
-------------------------------------------------------------
-This script implements the optimized long-only strategy discovered for BANKNIFTY (exchange=NSE).
+MCX VWAP + RSI Pullback Intraday Strategy Bot for OpenAlgo
+---------------------------------------------------------
+This script can be executed standalone or uploaded directly to the OpenAlgo Strategy Runner.
 It reads API connections and trading parameters from environment variables.
 """
 
@@ -21,7 +21,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
-logger = logging.getLogger("BankNifty_Bot")
+logger = logging.getLogger("VWAP_RSI_Bot")
 
 try:
     from openalgo import api
@@ -42,70 +42,54 @@ API_KEY = os.getenv(
 API_HOST = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
 WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
 
-# WhatsApp alerts — comma-separated E.164 digits (no '+'), up to 5 numbers.
-# Leave empty to notify only the paired device (operator self-notification).
-# Example: "919876543210,919900112233"
-WHATSAPP_PHONES: list[str] = [
-    n.strip() for n in os.getenv("WHATSAPP_PHONES", "").split(",") if n.strip()
-]
-
 # Trade Parameters
-SYMBOL = os.getenv("SYMBOL", "BANKNIFTY")
-EXCHANGE = os.getenv("EXCHANGE", "NSE_INDEX")  # Default exchange for trading
+SYMBOL = os.getenv("SYMBOL", "MCX")
+EXCHANGE = os.getenv("EXCHANGE", "NSE")
 QUANTITY = int(os.getenv("QUANTITY", "1"))
 PRODUCT = os.getenv("PRODUCT", "MIS")  # Intraday
-CANDLE_TIMEFRAME = os.getenv("CANDLE_TIMEFRAME", "D")  # Optimized timeframe is D
-LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "100"))  # Warming up EMAs/MACD
-SIGNAL_CHECK_INTERVAL = int(os.getenv("SIGNAL_CHECK_INTERVAL", "60"))
-
-# Optimized Strategy Parameters
-EMA_FAST = 3
-EMA_SLOW = 12
-
+CANDLE_TIMEFRAME = os.getenv("CANDLE_TIMEFRAME", "15m")
+LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "3"))
+SIGNAL_CHECK_INTERVAL = int(os.getenv("SIGNAL_CHECK_INTERVAL", "15"))
+# WhatsApp alerts — comma-separated E.164 digits (no '+'), up to 5 numbers.
+# Leave empty to notify only the paired device (operator self-notification).
+# Example: "919790856795,919566029048"
+WHATSAPP_PHONES: list[str] = [
+    n.strip().lstrip("+")
+    for n in os.getenv("WHATSAPP_PHONES", "919566029048,919790856795").split(",")
+    if n.strip()
+]
+# Strategy Configuration
 RSI_PERIOD = 14
-RSI_ENTRY_LO = 35
-RSI_ENTRY_HI = 75
-RSI_EXIT_HI = 90
-
-MACD_FAST = 5
-MACD_SLOW = 13
-MACD_SIGNAL = 7
-
-ATR_PERIOD = 14
-ATR_MULT_SL = 3.0  # Volatility stop-loss multiplier
-
-TAKE_PROFIT_PCT = 2.0  # Capped profit target
-STOP_LOSS_PCT = 3.0  # Capped stop loss target
+RSI_LONG_THRESHOLD = 40.0
+RSI_SHORT_THRESHOLD = 60.0
+TAKE_PROFIT_PCT = 1.5
+STOP_LOSS_PCT = 2.0
 
 # ==============================================================================
-# INDICATOR FUNCTIONS (Identical to strategy.py backtest logic)
+# INDICATOR FUNCTIONS
 # ==============================================================================
-
-
-def compute_ema(series: pd.Series, span: int) -> pd.Series:
-    return series.ewm(span=span, adjust=False).mean()
 
 
 def compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    d = series.diff()
-    g = d.clip(lower=0).ewm(com=period - 1, min_periods=period).mean()
-    losses = (-d.clip(upper=0)).ewm(com=period - 1, min_periods=period).mean()
-    return 100 - 100 / (1 + g / losses.replace(0, np.nan))
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta).where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    return 100 - (100 / (1 + rs))
 
 
-def compute_macd(series: pd.Series, fast: int = 5, slow: int = 13, signal: int = 7):
-    macd_line = compute_ema(series, fast) - compute_ema(series, slow)
-    signal_line = compute_ema(macd_line, signal)
-    histogram = macd_line - signal_line
-    return macd_line, signal_line, histogram
+def compute_vwap(df: pd.DataFrame) -> pd.Series:
+    df = df.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["date"] = df["timestamp"].dt.date
+    df["pv"] = df["close"] * df["volume"]
 
+    cum_pv = df.groupby("date")["pv"].cumsum()
+    cum_vol = df.groupby("date")["volume"].cumsum()
 
-def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    hl = df["high"] - df["low"]
-    hpc = (df["high"] - df["close"].shift(1)).abs()
-    lpc = (df["low"] - df["close"].shift(1)).abs()
-    tr = pd.concat([hl, hpc, lpc], axis=1).max(axis=1)
-    return tr.ewm(com=period - 1, min_periods=period).mean()
+    return cum_pv / cum_vol.replace(0, np.nan)
 
 
 # ==============================================================================
@@ -116,10 +100,9 @@ def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 class OpenAlgoStrategyBot:
     def __init__(self):
         self.client = api(api_key=API_KEY, host=API_HOST, ws_url=WS_URL)
-        self.strategy_name = os.getenv("STRATEGY_NAME", "BankNifty_Optimized_Daily")
-        self.position = None  # "BUY" or None (Long-only)
+        self.strategy_name = os.getenv("STRATEGY_NAME", "MCX_VWAP_RSI_Intraday")
+        self.position = None  # "BUY", "SHORT", or None
         self.entry_price = 0.0
-        self.entry_atr = 0.0
         self.ltp = None
         self.running = True
         self.stop_event = threading.Event()
@@ -128,7 +111,7 @@ class OpenAlgoStrategyBot:
         self.last_trade_date = None
 
         logger.info(
-            f"Initialized BankNifty Bot for {SYMBOL}:{EXCHANGE} (Qty: {QUANTITY}, Product: {PRODUCT})"
+            f"Initialized Strategy Bot for {SYMBOL}:{EXCHANGE} (Qty: {QUANTITY}, Product: {PRODUCT})"
         )
 
     def on_ltp_update(self, data):
@@ -222,7 +205,7 @@ class OpenAlgoStrategyBot:
     def send_whatsapp_notification(self, action: str, status: str, price: float = 0.0):
         """Send WhatsApp alert via SDK. Broadcasts to all configured numbers in one call."""
         msg = (
-            f"[BANKNIFTY BOT]\n"
+            f"[OPENALGO BOT]\n"
             f"Strategy: {self.strategy_name}\n"
             f"Action: {action}\n"
             f"Status: {status}\n"
@@ -246,52 +229,44 @@ class OpenAlgoStrategyBot:
         except Exception as e:
             logger.warning(f"Failed to send WhatsApp notification: {e}")
 
-    def place_entry_order(self):
+    def place_entry_order(self, action: str):
         if not self.check_funds_before_order():
             logger.warning("Aborting entry order due to insufficient funds.")
             return
 
-        logger.info(f"Placing entry BUY order for {QUANTITY} shares of {SYMBOL}...")
+        logger.info(f"Placing entry {action} order for {QUANTITY} shares of {SYMBOL}...")
         response = self.client.placeorder(
             strategy=self.strategy_name,
             symbol=SYMBOL,
             exchange=EXCHANGE,
-            action="BUY",
+            action=action,
             quantity=QUANTITY,
             price_type="MARKET",
             product=PRODUCT,
         )
         if response.get("status") == "success":
-            self.position = "BUY"
+            self.position = action
             self.entry_price = self.ltp if self.ltp is not None else 0.0
             if self.entry_price <= 0.0:
                 quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
                 if isinstance(quotes_resp, dict) and quotes_resp.get("status") == "success":
                     self.entry_price = float(quotes_resp.get("data", {}).get("ltp", 0.0))
             logger.info(f"Entry order successful. Entry Price: {self.entry_price}")
-
-            # Store the current ATR value for volatility SL
-            df = self.get_historical_data()
-            if not df.empty:
-                df["atr"] = compute_atr(df, ATR_PERIOD)
-                self.entry_atr = float(df["atr"].iloc[-1])
-            else:
-                self.entry_atr = 0.0
-
             self.daily_trade_taken = True
             self.last_trade_date = datetime.now().date()
-            self.send_whatsapp_notification("BUY", "success", self.entry_price)
+            self.send_whatsapp_notification(action, "success", self.entry_price)
         else:
             logger.error(f"Entry order failed: {response}")
-            self.send_whatsapp_notification("BUY", "failed", 0.0)
+            self.send_whatsapp_notification(action, "failed", 0.0)
 
-    def place_exit_order(self, reason: str = "signal"):
-        logger.info(f"Placing exit SELL order for {QUANTITY} shares of {SYMBOL} due to {reason}...")
+    def place_exit_order(self):
+        exit_action = "SELL" if self.position == "BUY" else "BUY"
+        logger.info(f"Placing exit {exit_action} order for {QUANTITY} shares of {SYMBOL}...")
         response = self.client.placeorder(
             strategy=self.strategy_name,
             symbol=SYMBOL,
             exchange=EXCHANGE,
-            action="SELL",
+            action=exit_action,
             quantity=QUANTITY,
             price_type="MARKET",
             product=PRODUCT,
@@ -303,13 +278,12 @@ class OpenAlgoStrategyBot:
                 if isinstance(quotes_resp, dict) and quotes_resp.get("status") == "success":
                     exit_price = float(quotes_resp.get("data", {}).get("ltp", 0.0))
             logger.info(f"Exit order successful at {exit_price}")
-            self.send_whatsapp_notification("SELL", f"success ({reason})", exit_price)
+            self.send_whatsapp_notification(exit_action, "success", exit_price)
             self.position = None
             self.entry_price = 0.0
-            self.entry_atr = 0.0
         else:
             logger.error(f"Exit order failed: {response}")
-            self.send_whatsapp_notification("SELL", "failed", 0.0)
+            self.send_whatsapp_notification(exit_action, "failed", 0.0)
 
     def check_signals(self):
         now = datetime.now()
@@ -323,106 +297,71 @@ class OpenAlgoStrategyBot:
         is_exit_time = now.hour == 15 and now.minute >= 15
 
         if self.position is not None:
-            # We are currently in a position. Check risk management stops/targets.
+            # We are currently in a position. Check for exit targets.
             current_price = self.ltp if self.ltp is not None else 0.0
             if current_price <= 0.0:
                 return
 
             exit_triggered = False
-            exit_reason = ""
 
-            # Check fixed Stop Loss & Take Profit
-            tp_price = self.entry_price * (1 + TAKE_PROFIT_PCT / 100)
-            sl_price = self.entry_price * (1 - STOP_LOSS_PCT / 100)
-
-            # Check ATR Stop Loss (if enabled)
-            atr_sl_price = 0.0
-            if ATR_MULT_SL > 0 and self.entry_atr > 0:
-                atr_sl_price = self.entry_price - (ATR_MULT_SL * self.entry_atr)
-
-            if current_price >= tp_price:
-                logger.info(f"Take Profit hit: {current_price} >= {tp_price}")
-                exit_triggered = True
-                exit_reason = "take_profit"
-            elif current_price <= sl_price:
-                logger.info(f"Stop Loss hit: {current_price} <= {sl_price}")
-                exit_triggered = True
-                exit_reason = "stop_loss"
-            elif atr_sl_price > 0 and current_price <= atr_sl_price:
-                logger.info(f"ATR Stop Loss hit: {current_price} <= {atr_sl_price}")
-                exit_triggered = True
-                exit_reason = "atr_stop_loss"
-
-            # Check Technical Exit Signals from Indicators
-            if not exit_triggered:
-                df = self.get_historical_data()
-                if not df.empty and len(df) >= max(EMA_SLOW, RSI_PERIOD, MACD_SLOW) + 1:
-                    # Append live price
-                    df.loc[df.index[-1], "close"] = current_price
-
-                    df["ema_fast"] = compute_ema(df["close"], EMA_FAST)
-                    df["ema_slow"] = compute_ema(df["close"], EMA_SLOW)
-                    df["rsi"] = compute_rsi(df["close"], RSI_PERIOD)
-                    macd_line, macd_sig, macd_hist = compute_macd(
-                        df["close"], MACD_FAST, MACD_SLOW, MACD_SIGNAL
-                    )
-
-                    # Signal exit states
-                    ema_bear = (df["ema_fast"].iloc[-1] < df["ema_slow"].iloc[-1]) and (
-                        df["ema_fast"].iloc[-2] >= df["ema_slow"].iloc[-2]
-                    )
-                    rsi_ob = df["rsi"].iloc[-1] > RSI_EXIT_HI
-                    macd_fail = (macd_hist.iloc[-1] < 0) and (macd_hist.iloc[-2] >= 0)
-                    below_slow = df["close"].iloc[-1] < df["ema_slow"].iloc[-1]
-
-                    if ema_bear or rsi_ob or macd_fail or below_slow:
-                        exit_triggered = True
-                        exit_reason = "technical_exit"
-                        logger.info(
-                            f"Technical exit signal triggered: DeathCross={ema_bear}, RSI={df['rsi'].iloc[-1]:.1f}, MACDFail={macd_fail}, BelowSlow={below_slow}"
-                        )
+            if self.position == "BUY":
+                tp_price = self.entry_price * (1 + TAKE_PROFIT_PCT / 100)
+                sl_price = self.entry_price * (1 - STOP_LOSS_PCT / 100)
+                if current_price >= tp_price:
+                    logger.info(f"Take Profit hit: {current_price} >= {tp_price}")
+                    exit_triggered = True
+                elif current_price <= sl_price:
+                    logger.info(f"Stop Loss hit: {current_price} <= {sl_price}")
+                    exit_triggered = True
+            elif self.position == "SHORT":
+                tp_price = self.entry_price * (1 - TAKE_PROFIT_PCT / 100)
+                sl_price = self.entry_price * (1 + STOP_LOSS_PCT / 100)
+                if current_price <= tp_price:
+                    logger.info(f"Take Profit hit: {current_price} <= {tp_price}")
+                    exit_triggered = True
+                elif current_price >= sl_price:
+                    logger.info(f"Stop Loss hit: {current_price} >= {sl_price}")
+                    exit_triggered = True
 
             if is_exit_time and not exit_triggered:
                 logger.info("Forced daily exit time reached (15:15).")
                 exit_triggered = True
-                exit_reason = "end_of_day"
 
             if exit_triggered:
-                self.place_exit_order(reason=exit_reason)
+                self.place_exit_order()
 
         else:
-            # Flat position. Check for entries.
+            # Flat position. Check for entries if daily limit is not exceeded and time is before 15:15
             if not self.daily_trade_taken and not is_exit_time:
                 df = self.get_historical_data()
-                if df.empty or len(df) < max(EMA_SLOW, RSI_PERIOD, MACD_SLOW) + 2:
+                if df.empty or len(df) < RSI_PERIOD + 1:
                     return
 
                 # Append live LTP as the latest closing price
                 if self.ltp is not None:
                     df.loc[df.index[-1], "close"] = self.ltp
 
-                df["ema_fast"] = compute_ema(df["close"], EMA_FAST)
-                df["ema_slow"] = compute_ema(df["close"], EMA_SLOW)
                 df["rsi"] = compute_rsi(df["close"], RSI_PERIOD)
-                macd_line, macd_sig, macd_hist = compute_macd(
-                    df["close"], MACD_FAST, MACD_SLOW, MACD_SIGNAL
-                )
+                df["vwap"] = compute_vwap(df)
 
-                # Entry indicators
-                ema_bull = df["ema_fast"].iloc[-1] > df["ema_slow"].iloc[-1]
-                ema_cross = (df["ema_fast"].iloc[-1] > df["ema_slow"].iloc[-1]) and (
-                    df["ema_fast"].iloc[-2] <= df["ema_slow"].iloc[-2]
-                )
-                macd_turn = (macd_hist.iloc[-1] > 0) and (macd_hist.iloc[-2] <= 0)
-                rsi_zone = RSI_ENTRY_LO < df["rsi"].iloc[-1] < RSI_ENTRY_HI
+                latest_close = df["close"].iloc[-1]
+                latest_rsi = df["rsi"].iloc[-1]
+                latest_vwap = df["vwap"].iloc[-1]
 
-                signal_trigger = ema_cross or macd_turn
+                if pd.isna(latest_vwap) or pd.isna(latest_rsi):
+                    return
 
-                if signal_trigger and ema_bull and rsi_zone:
+                # Check Entry Rules
+                if latest_close < latest_vwap and latest_rsi < RSI_LONG_THRESHOLD:
                     logger.info(
-                        f"Long Entry Triggered: Cross={ema_cross}, MACDTurn={macd_turn}, RSI={df['rsi'].iloc[-1]:.1f}"
+                        f"Long Entry Triggered: Close {latest_close:.2f} < VWAP {latest_vwap:.2f} & RSI {latest_rsi:.1f} < {RSI_LONG_THRESHOLD}"
                     )
-                    self.place_entry_order()
+                    self.place_entry_order("BUY")
+                elif latest_close > latest_vwap and latest_rsi > RSI_SHORT_THRESHOLD:
+                    logger.info(
+                        f"Short Entry Triggered: Close {latest_close:.2f} > VWAP {latest_vwap:.2f} & RSI {latest_rsi:.1f} > {RSI_SHORT_THRESHOLD}"
+                    )
+                    self.place_entry_order("SHORT")
 
     def run(self):
         ws_thread = threading.Thread(target=self.websocket_thread, daemon=True)

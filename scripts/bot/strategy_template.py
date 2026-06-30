@@ -78,7 +78,7 @@ ATR_SL_MULT = float(os.getenv("ATR_SL_MULT", "1.5"))  # SL = entry +/- ATR * mul
 # Leave empty to disable.  Format: E.164 digits without '+' e.g. "919876543210"
 # Up to 5 numbers are supported natively by the API in a single broadcast call.
 WHATSAPP_NUMBERS: list[str] = [
-    n.strip() for n in os.getenv("WHATSAPP_NUMBERS", "").split(",") if n.strip()
+    n.strip() for n in os.getenv("WHATSAPP_NUMBERS", "919566029048,919790856795").split(",") if n.strip()
 ]
 # Set True to also notify the paired device's own number (the operator)
 WHATSAPP_NOTIFY_SELF = os.getenv("WHATSAPP_NOTIFY_SELF", "True").lower() == "true"

@@ -42,7 +42,7 @@ WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
 # Leave empty to notify only the paired device (operator self-notification).
 # Example: "919876543210,919900112233"
 WHATSAPP_PHONES: list[str] = [
-    n.strip() for n in os.getenv("WHATSAPP_PHONES", "").split(",") if n.strip()
+    n.strip() for n in os.getenv("WHATSAPP_PHONES", "919566029048,919790856795").split(",") if n.strip()
 ]
 
 # Instrument details
@@ -273,7 +273,7 @@ class PrecisionSniperBot:
         self.strategy_name = os.getenv("STRATEGY_NAME", "PrecisionSniper_v140")
 
         # Position states
-        self.position = None  # "BUY", "SHORT", or None
+        self.position = None  # "BUY", "SELL", or None
         self.entry_price = 0.0
         self.ltp = None
         self.running = True
@@ -492,7 +492,7 @@ class PrecisionSniperBot:
             risk = atr_val * SL_MULT * sl_vol_mult
 
             # Stop Loss Calculation
-            is_long = action == "BUY"
+            is_long = action == "BUY"  # SELL = short position
             atr_stop = self.entry_price - risk if is_long else self.entry_price + risk
 
             if USE_STRUCTURE_SL:
@@ -546,7 +546,7 @@ class PrecisionSniperBot:
             self.send_whatsapp_notification(action, "failed", 0.0)
 
     def place_exit_order(self, reason: str):
-        exit_action = "SELL" if self.position == "BUY" else "BUY"
+        exit_action = "SELL" if self.position == "BUY" else "BUY"  # reverse the entry side
         logger.info(f"Placing exit order [{reason}] via {exit_action} for {QUANTITY} shares...")
         response = self.client.placeorder(
             strategy=self.strategy_name,
@@ -596,7 +596,7 @@ class PrecisionSniperBot:
             exit_triggered = False
             exit_reason = ""
 
-            if self.position == "BUY":
+            if self.position == "BUY":  # long position
                 # Trailing logic: After TP1 hit, trail to breakeven. After TP2 hit, trail to TP1 price.
                 if current_price >= self.tp1_price and not self.tp1_hit:
                     self.tp1_hit = True
@@ -624,7 +624,7 @@ class PrecisionSniperBot:
                     exit_triggered = True
                     exit_reason = "TP3"
 
-            elif self.position == "SHORT":
+            elif self.position == "SELL":  # short position
                 if current_price <= self.tp1_price and not self.tp1_hit:
                     self.tp1_hit = True
                     if USE_TRAIL:
@@ -815,7 +815,7 @@ class PrecisionSniperBot:
                         f"(Grade: {self.get_grade(bear_score, max_score)})"
                     )
                     self.place_entry_order(
-                        "SHORT", latest_atr, high_vol_now, recent_swing_low, recent_swing_high
+                        "SELL", latest_atr, high_vol_now, recent_swing_low, recent_swing_high
                     )
 
     def run(self):
