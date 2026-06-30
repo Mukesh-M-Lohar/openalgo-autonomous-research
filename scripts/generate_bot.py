@@ -6,9 +6,7 @@ from pathlib import Path
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate a bot script from the template."
-    )
+    parser = argparse.ArgumentParser(description="Generate a bot script from the template.")
     parser.add_argument("symbol", type=str, help="Stock or index symbol")
     parser.add_argument(
         "--exchange",
@@ -22,9 +20,7 @@ def main():
         default="15m",
         help="Timeframe interval (e.g. 1m, 5m, 15m, D)",
     )
-    parser.add_argument(
-        "--strategy", type=str, default=None, help="Strategy name"
-    )
+    parser.add_argument("--strategy", type=str, default=None, help="Strategy name")
     parser.add_argument(
         "--whatsapp",
         type=str,
@@ -51,18 +47,14 @@ def main():
         )
         sys.exit(1)
 
-    template_path = Path(
-        "/root/openalgo-autonomous-research/scripts/bot/strategy_template.py"
-    )
+    template_path = Path("/root/openalgo-autonomous-research/scripts/bot/strategy_template.py")
     if not template_path.exists():
         print(f"Error: Template file not found at {template_path}")
         sys.exit(1)
 
     # Output file path
     output_filename = f"{symbol.lower()}_bot.py"
-    output_path = (
-        Path("/root/openalgo-autonomous-research/scripts/bot") / output_filename
-    )
+    output_path = Path("/root/openalgo-autonomous-research/scripts/bot") / output_filename
 
     try:
         content = template_path.read_text(encoding="utf-8")
