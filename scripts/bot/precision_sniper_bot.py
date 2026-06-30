@@ -5,7 +5,6 @@ Replicates the v1.4.0 Pine Script logic including presets, confluence
 scoring engine, volatility filters, and structure-based trailing stop-loss.
 """
 
-import json
 import logging
 import os
 import sys
@@ -38,6 +37,13 @@ except ImportError:
 API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
 API_HOST = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
 WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
+
+# WhatsApp alerts — comma-separated E.164 digits (no '+'), up to 5 numbers.
+# Leave empty to notify only the paired device (operator self-notification).
+# Example: "919876543210,919900112233"
+WHATSAPP_PHONES: list[str] = [
+    n.strip() for n in os.getenv("WHATSAPP_PHONES", "919566029048,919790856795").split(",") if n.strip()
+]
 
 # Instrument details
 SYMBOL = os.getenv("SYMBOL", "MCX")
@@ -267,7 +273,7 @@ class PrecisionSniperBot:
         self.strategy_name = os.getenv("STRATEGY_NAME", "PrecisionSniper_v140")
 
         # Position states
-        self.position = None  # "BUY", "SHORT", or None
+        self.position = None  # "BUY", "SELL", or None
         self.entry_price = 0.0
         self.ltp = None
         self.running = True
@@ -324,13 +330,19 @@ class PrecisionSniperBot:
                 start_date=start_date.strftime("%Y-%m-%d"),
                 end_date=end_date.strftime("%Y-%m-%d"),
             )
-            if history_data and isinstance(history_data, list):
-                df = pd.DataFrame(history_data)
+            if isinstance(history_data, pd.DataFrame) and not history_data.empty:
+                df = history_data.reset_index()  # bring 'timestamp' back as a column
                 # Parse numeric columns
                 for col in ["open", "high", "low", "close", "volume"]:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
                 return df
+            # Error dict returned by SDK (e.g. no_data, api_error)
+            if isinstance(history_data, dict):
+                logger.warning(
+                    f"History API returned no data for TF {tf}: "
+                    f"{history_data.get('message', history_data)}"
+                )
             return pd.DataFrame()
         except Exception as e:
             logger.error(f"Failed to fetch historical data for TF {tf}: {e}")
@@ -362,15 +374,17 @@ class PrecisionSniperBot:
         """Verify funds availability based on estimated entry price."""
         try:
             funds_resp = self.client.funds()
-            if funds_resp and funds_resp.get("status") == "success":
+            if isinstance(funds_resp, dict) and funds_resp.get("status") == "success":
                 funds_data = funds_resp.get("data", {})
-                available_balance = float(funds_data.get("available_balance", 0.0))
+                # SDK returns 'availablecash' (not 'available_balance')
+                available_balance = float(funds_data.get("availablecash", 0.0))
 
                 price = self.ltp if self.ltp is not None else 0.0
                 if price <= 0.0:
                     quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
-                    if quotes_resp and quotes_resp.get("status") == "success":
-                        price = float(quotes_resp.get("data", {}).get("last_price", 0.0))
+                    if isinstance(quotes_resp, dict) and quotes_resp.get("status") == "success":
+                        # SDK returns 'ltp' (not 'last_price')
+                        price = float(quotes_resp.get("data", {}).get("ltp", 0.0))
 
                 if price <= 0.0:
                     df = self.get_historical_data()
@@ -389,16 +403,16 @@ class PrecisionSniperBot:
                     return False
                 return True
             else:
-                logger.warning("Could not fetch funds details. Proceeding anyway.")
+                logger.warning(
+                    f"Could not fetch funds details: {funds_resp.get('message', funds_resp) if isinstance(funds_resp, dict) else funds_resp}. Proceeding anyway."
+                )
                 return True
         except Exception as e:
             logger.error(f"Error checking funds: {e}")
             return True
 
     def send_whatsapp_notification(self, action: str, status: str, price: float = 0.0):
-        url = f"{API_HOST}/api/v1/whatsapp/notify"
-        api_key = os.getenv("WHATSAPP_API_KEY", API_KEY)
-
+        """Send WhatsApp alert via SDK. Supports multiple recipients."""
         msg = (
             f"[PRECISION SNIPER BOT]\n"
             f"Strategy: {self.strategy_name}\n"
@@ -408,20 +422,18 @@ class PrecisionSniperBot:
             f"Price: {price:.2f}\n"
             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
-
-        payload = {"apikey": api_key, "self": True, "message": msg}
-        from urllib.request import Request, urlopen
-
         try:
-            req = Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urlopen(req, timeout=5.0) as response:
-                response.read()
-            logger.info("WhatsApp notification sent successfully.")
+            if WHATSAPP_PHONES:
+                # Broadcast to all configured numbers in a single API call (server caps at 5)
+                r = self.client.whatsapp(msg, to=WHATSAPP_PHONES[:5])
+            else:
+                # Fallback: notify the paired device (operator's own number)
+                r = self.client.whatsapp(msg)
+
+            if isinstance(r, dict) and r.get("status") != "success":
+                logger.warning(f"WhatsApp notification issue: {r.get('message', r)}")
+            else:
+                logger.info("WhatsApp notification sent successfully.")
         except Exception as e:
             logger.warning(f"WhatsApp notification failed: {e}")
 
@@ -470,8 +482,8 @@ class PrecisionSniperBot:
             self.entry_price = self.ltp if self.ltp is not None else 0.0
             if self.entry_price <= 0.0:
                 quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
-                if quotes_resp and quotes_resp.get("status") == "success":
-                    self.entry_price = float(quotes_resp.get("data", {}).get("last_price", 0.0))
+                if isinstance(quotes_resp, dict) and quotes_resp.get("status") == "success":
+                    self.entry_price = float(quotes_resp.get("data", {}).get("ltp", 0.0))
 
             # Setup dynamic SL/TP targets
             sl_vol_mult = (
@@ -480,7 +492,7 @@ class PrecisionSniperBot:
             risk = atr_val * SL_MULT * sl_vol_mult
 
             # Stop Loss Calculation
-            is_long = action == "BUY"
+            is_long = action == "BUY"  # SELL = short position
             atr_stop = self.entry_price - risk if is_long else self.entry_price + risk
 
             if USE_STRUCTURE_SL:
@@ -534,7 +546,7 @@ class PrecisionSniperBot:
             self.send_whatsapp_notification(action, "failed", 0.0)
 
     def place_exit_order(self, reason: str):
-        exit_action = "SELL" if self.position == "BUY" else "BUY"
+        exit_action = "SELL" if self.position == "BUY" else "BUY"  # reverse the entry side
         logger.info(f"Placing exit order [{reason}] via {exit_action} for {QUANTITY} shares...")
         response = self.client.placeorder(
             strategy=self.strategy_name,
@@ -549,8 +561,8 @@ class PrecisionSniperBot:
             exit_price = self.ltp if self.ltp is not None else 0.0
             if exit_price <= 0.0:
                 quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
-                if quotes_resp and quotes_resp.get("status") == "success":
-                    exit_price = float(quotes_resp.get("data", {}).get("last_price", 0.0))
+                if isinstance(quotes_resp, dict) and quotes_resp.get("status") == "success":
+                    exit_price = float(quotes_resp.get("data", {}).get("ltp", 0.0))
             logger.info(f"Exit Order Successful at {exit_price:.2f}. Reason: {reason}")
             self.send_whatsapp_notification(exit_action, f"success (Exit: {reason})", exit_price)
             self.position = None
@@ -584,7 +596,7 @@ class PrecisionSniperBot:
             exit_triggered = False
             exit_reason = ""
 
-            if self.position == "BUY":
+            if self.position == "BUY":  # long position
                 # Trailing logic: After TP1 hit, trail to breakeven. After TP2 hit, trail to TP1 price.
                 if current_price >= self.tp1_price and not self.tp1_hit:
                     self.tp1_hit = True
@@ -612,7 +624,7 @@ class PrecisionSniperBot:
                     exit_triggered = True
                     exit_reason = "TP3"
 
-            elif self.position == "SHORT":
+            elif self.position == "SELL":  # short position
                 if current_price <= self.tp1_price and not self.tp1_hit:
                     self.tp1_hit = True
                     if USE_TRAIL:
@@ -803,7 +815,7 @@ class PrecisionSniperBot:
                         f"(Grade: {self.get_grade(bear_score, max_score)})"
                     )
                     self.place_entry_order(
-                        "SHORT", latest_atr, high_vol_now, recent_swing_low, recent_swing_high
+                        "SELL", latest_atr, high_vol_now, recent_swing_low, recent_swing_high
                     )
 
     def run(self):

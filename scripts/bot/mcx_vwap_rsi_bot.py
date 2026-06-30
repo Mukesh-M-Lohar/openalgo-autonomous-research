@@ -5,7 +5,6 @@ This script can be executed standalone or uploaded directly to the OpenAlgo Stra
 It reads API connections and trading parameters from environment variables.
 """
 
-import json
 import logging
 import os
 import sys
@@ -51,7 +50,14 @@ PRODUCT = os.getenv("PRODUCT", "MIS")  # Intraday
 CANDLE_TIMEFRAME = os.getenv("CANDLE_TIMEFRAME", "15m")
 LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "3"))
 SIGNAL_CHECK_INTERVAL = int(os.getenv("SIGNAL_CHECK_INTERVAL", "15"))
-
+# WhatsApp alerts — comma-separated E.164 digits (no '+'), up to 5 numbers.
+# Leave empty to notify only the paired device (operator self-notification).
+# Example: "919790856795,919566029048"
+WHATSAPP_PHONES: list[str] = [
+    n.strip().lstrip("+")
+    for n in os.getenv("WHATSAPP_PHONES", "919566029048,919790856795").split(",")
+    if n.strip()
+]
 # Strategy Configuration
 RSI_PERIOD = 14
 RSI_LONG_THRESHOLD = 40.0
@@ -138,13 +144,18 @@ class OpenAlgoStrategyBot:
                 start_date=start_date.strftime("%Y-%m-%d"),
                 end_date=end_date.strftime("%Y-%m-%d"),
             )
-            if history_data and isinstance(history_data, list):
-                df = pd.DataFrame(history_data)
+            if isinstance(history_data, pd.DataFrame) and not history_data.empty:
+                df = history_data.reset_index()  # bring 'timestamp' back as a column
                 # Parse numeric columns
                 for col in ["open", "high", "low", "close", "volume"]:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce")
                 return df
+            # Error dict returned by SDK (e.g. no_data, api_error)
+            if isinstance(history_data, dict):
+                logger.warning(
+                    f"History API returned no data: {history_data.get('message', history_data)}"
+                )
             return pd.DataFrame()
         except Exception as e:
             logger.error(f"Failed to fetch historical data: {e}")
@@ -154,15 +165,17 @@ class OpenAlgoStrategyBot:
         """Verify available balance against estimated order value."""
         try:
             funds_resp = self.client.funds()
-            if funds_resp and funds_resp.get("status") == "success":
+            if isinstance(funds_resp, dict) and funds_resp.get("status") == "success":
                 funds_data = funds_resp.get("data", {})
-                available_balance = float(funds_data.get("available_balance", 0.0))
+                # SDK returns 'availablecash' (not 'available_balance')
+                available_balance = float(funds_data.get("availablecash", 0.0))
 
                 price = self.ltp if self.ltp is not None else 0.0
                 if price <= 0.0:
                     quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
-                    if quotes_resp and quotes_resp.get("status") == "success":
-                        price = float(quotes_resp.get("data", {}).get("last_price", 0.0))
+                    if isinstance(quotes_resp, dict) and quotes_resp.get("status") == "success":
+                        # SDK returns 'ltp' (not 'last_price')
+                        price = float(quotes_resp.get("data", {}).get("ltp", 0.0))
 
                 if price <= 0.0:
                     df = self.get_historical_data()
@@ -181,15 +194,16 @@ class OpenAlgoStrategyBot:
                     return False
                 return True
             else:
-                logger.warning("Could not fetch funds info to verify. Proceeding anyway.")
+                logger.warning(
+                    f"Could not fetch funds info: {funds_resp.get('message', funds_resp) if isinstance(funds_resp, dict) else funds_resp}. Proceeding anyway."
+                )
                 return True
         except Exception as e:
             logger.error(f"Error checking funds: {e}")
             return True
 
     def send_whatsapp_notification(self, action: str, status: str, price: float = 0.0):
-        url = f"{API_HOST}/api/v1/whatsapp/notify"
-
+        """Send WhatsApp alert via SDK. Broadcasts to all configured numbers in one call."""
         msg = (
             f"[OPENALGO BOT]\n"
             f"Strategy: {self.strategy_name}\n"
@@ -200,21 +214,18 @@ class OpenAlgoStrategyBot:
             f"Price: {price:.2f}\n"
             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
-
-        payload = {"apikey": API_KEY, "self": True, "message": msg}
-
-        from urllib.request import Request, urlopen
-
         try:
-            req = Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urlopen(req, timeout=5.0) as response:
-                response.read()
-            logger.info("WhatsApp notification sent successfully.")
+            if WHATSAPP_PHONES:
+                # Single API call broadcasts to all numbers (server caps at 5)
+                r = self.client.whatsapp(msg, to=WHATSAPP_PHONES[:5])
+            else:
+                # Fallback: notify the paired device (operator's own number)
+                r = self.client.whatsapp(msg)
+
+            if isinstance(r, dict) and r.get("status") != "success":
+                logger.warning(f"WhatsApp notification issue: {r.get('message', r)}")
+            else:
+                logger.info("WhatsApp notification sent successfully.")
         except Exception as e:
             logger.warning(f"Failed to send WhatsApp notification: {e}")
 
@@ -238,8 +249,8 @@ class OpenAlgoStrategyBot:
             self.entry_price = self.ltp if self.ltp is not None else 0.0
             if self.entry_price <= 0.0:
                 quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
-                if quotes_resp and quotes_resp.get("status") == "success":
-                    self.entry_price = float(quotes_resp.get("data", {}).get("last_price", 0.0))
+                if isinstance(quotes_resp, dict) and quotes_resp.get("status") == "success":
+                    self.entry_price = float(quotes_resp.get("data", {}).get("ltp", 0.0))
             logger.info(f"Entry order successful. Entry Price: {self.entry_price}")
             self.daily_trade_taken = True
             self.last_trade_date = datetime.now().date()
@@ -264,8 +275,8 @@ class OpenAlgoStrategyBot:
             exit_price = self.ltp if self.ltp is not None else 0.0
             if exit_price <= 0.0:
                 quotes_resp = self.client.quotes(symbol=SYMBOL, exchange=EXCHANGE)
-                if quotes_resp and quotes_resp.get("status") == "success":
-                    exit_price = float(quotes_resp.get("data", {}).get("last_price", 0.0))
+                if isinstance(quotes_resp, dict) and quotes_resp.get("status") == "success":
+                    exit_price = float(quotes_resp.get("data", {}).get("ltp", 0.0))
             logger.info(f"Exit order successful at {exit_price}")
             self.send_whatsapp_notification(exit_action, "success", exit_price)
             self.position = None
