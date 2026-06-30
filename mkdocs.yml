@@ -57,6 +57,7 @@ nav:
       - Low-Level Design: low-level-design.md
   - API Reference:
       - REST Endpoints: api/api-reference.md
+      - Python SDK Reference: guides/openalgo-sdk-reference.md
   - Guides:
       - Configuration: guides/configuration.md
       - Adding Indicators: guides/adding-indicators.md
