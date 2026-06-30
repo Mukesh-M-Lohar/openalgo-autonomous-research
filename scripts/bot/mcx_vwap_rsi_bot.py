@@ -142,9 +142,8 @@ class OpenAlgoStrategyBot:
             # Check if cache is valid (within 30s for 1m, 5 mins for larger timeframes)
             cache_expiry = 30 if "1m" in CANDLE_TIMEFRAME else 300
             current_time = time.time()
-            if (
-                self._cache_df is not None
-                and (current_time - self._cache_last_fetched < cache_expiry)
+            if self._cache_df is not None and (
+                current_time - self._cache_last_fetched < cache_expiry
             ):
                 return self._cache_df.copy()
 

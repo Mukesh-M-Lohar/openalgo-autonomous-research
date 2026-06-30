@@ -161,9 +161,8 @@ class OpenAlgoStrategyBot:
             # Check if cache is valid (within 30s for 1m, 5 mins for larger timeframes)
             cache_expiry = 30 if "1m" in CANDLE_TIMEFRAME else 300
             current_time = time.time()
-            if (
-                self._cache_df is not None
-                and (current_time - self._cache_last_fetched < cache_expiry)
+            if self._cache_df is not None and (
+                current_time - self._cache_last_fetched < cache_expiry
             ):
                 return self._cache_df.copy()
 
@@ -181,10 +180,12 @@ class OpenAlgoStrategyBot:
 
             # On-the-fly Daily aggregation fallback if Daily data is missing in DB
             if (CANDLE_TIMEFRAME == "D") and (
-                (isinstance(history_data, dict) and history_data.get("status") == "error") or
-                (isinstance(history_data, pd.DataFrame) and history_data.empty)
+                (isinstance(history_data, dict) and history_data.get("status") == "error")
+                or (isinstance(history_data, pd.DataFrame) and history_data.empty)
             ):
-                logger.info("Daily data not found in database. Fetching 15m data to aggregate to Daily on-the-fly...")
+                logger.info(
+                    "Daily data not found in database. Fetching 15m data to aggregate to Daily on-the-fly..."
+                )
                 history_data = self.client.history(
                     symbol=SYMBOL,
                     exchange=EXCHANGE,
@@ -195,13 +196,19 @@ class OpenAlgoStrategyBot:
                 )
                 if isinstance(history_data, pd.DataFrame) and not history_data.empty:
                     # Resample 15-minute candles to Daily candles
-                    history_data = history_data.resample('D').agg({
-                        'open': 'first',
-                        'high': 'max',
-                        'low': 'min',
-                        'close': 'last',
-                        'volume': 'sum'
-                    }).dropna()
+                    history_data = (
+                        history_data.resample("D")
+                        .agg(
+                            {
+                                "open": "first",
+                                "high": "max",
+                                "low": "min",
+                                "close": "last",
+                                "volume": "sum",
+                            }
+                        )
+                        .dropna()
+                    )
 
             if isinstance(history_data, pd.DataFrame) and not history_data.empty:
                 df = history_data.reset_index()  # bring 'timestamp' back as a column
