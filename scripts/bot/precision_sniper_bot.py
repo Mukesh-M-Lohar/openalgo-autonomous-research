@@ -42,7 +42,9 @@ WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
 # Leave empty to notify only the paired device (operator self-notification).
 # Example: "919876543210,919900112233"
 WHATSAPP_PHONES: list[str] = [
-    n.strip() for n in os.getenv("WHATSAPP_PHONES", "919566029048,919790856795").split(",") if n.strip()
+    n.strip()
+    for n in os.getenv("WHATSAPP_PHONES", "919566029048,919790856795").split(",")
+    if n.strip()
 ]
 
 # Instrument details
