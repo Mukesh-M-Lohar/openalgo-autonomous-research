@@ -41,9 +41,7 @@ logger = logging.getLogger("OptionsBot")
 try:
     from openalgo import api
 except ImportError:
-    logger.error(
-        "The 'openalgo' package is required. Install with: pip install openalgo"
-    )
+    logger.error("The 'openalgo' package is required. Install with: pip install openalgo")
     sys.exit(1)
 
 # ==============================================================================
@@ -212,9 +210,7 @@ def compute_atr(df: pd.DataFrame, period: int) -> pd.Series:
     return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
 
-def compute_macd(
-    series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
-):
+def compute_macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9):
     """MACD line, signal line, histogram."""
     ema_fast = series.ewm(span=fast, adjust=False).mean()
     ema_slow = series.ewm(span=slow, adjust=False).mean()
@@ -371,9 +367,7 @@ class OptionChainAnalyzer:
                         scores.append(max(0, 1 - spread_pct * 10))  # Penalty for wide spread
         return np.mean(scores) if scores else 0.5
 
-    def get_greeks(
-        self, symbol: str, exchange: str, interest_rate: float = 6.5
-    ) -> dict | None:
+    def get_greeks(self, symbol: str, exchange: str, interest_rate: float = 6.5) -> dict | None:
         """Fetch option Greeks via SDK."""
         try:
             resp = self.client.optiongreeks(
@@ -689,8 +683,7 @@ class IntradayOptionsBot:
                 return df
             if isinstance(history, dict):
                 logger.warning(
-                    f"History returned no data for {symbol}: "
-                    f"{history.get('message', history)}"
+                    f"History returned no data for {symbol}: {history.get('message', history)}"
                 )
             return pd.DataFrame()
         except Exception as e:
@@ -859,16 +852,16 @@ class IntradayOptionsBot:
 
         # ---- Bull scoring ----
         bull = 0.0
-        bull += 1.0 if lf > ls else 0.0               # EMA fast > slow
-        bull += 1.0 if lc > lt else 0.0                # Price > trend EMA
-        bull += 1.0 if 50 < lr < 75 else 0.0           # RSI bullish zone
-        bull += 1.0 if lmh > 0 else 0.0                # MACD histogram positive
-        bull += 1.0 if lmh > lmh_prev else 0.0         # MACD hist rising
+        bull += 1.0 if lf > ls else 0.0  # EMA fast > slow
+        bull += 1.0 if lc > lt else 0.0  # Price > trend EMA
+        bull += 1.0 if 50 < lr < 75 else 0.0  # RSI bullish zone
+        bull += 1.0 if lmh > 0 else 0.0  # MACD histogram positive
+        bull += 1.0 if lmh > lmh_prev else 0.0  # MACD hist rising
         bull += 1.0 if (vwap_valid and lc > latest_vwap) else 0.0  # Above VWAP
-        bull += 1.0 if vol_above else 0.0               # Volume confirmation
+        bull += 1.0 if vol_above else 0.0  # Volume confirmation
         bull += 1.0 if (ladx > 20 and ldp > ldm) else 0.0  # ADX trending bullish
-        bull += 1.0 if bull_cross else 0.0              # EMA crossover event
-        bull += 0.5 if lc > lf else 0.0                 # Price above fast EMA
+        bull += 1.0 if bull_cross else 0.0  # EMA crossover event
+        bull += 0.5 if lc > lf else 0.0  # Price above fast EMA
 
         # ---- Bear scoring ----
         bear = 0.0
@@ -941,20 +934,25 @@ class IntradayOptionsBot:
             option_symbol = resp.get("symbol", "UNKNOWN")
             logger.info(f"✅ Order placed: {option_symbol} | OrderID: {resp.get('orderid')}")
             return self._create_position(
-                pick, "directional", direction,
-                legs=[{
-                    "symbol": option_symbol,
-                    "offset": DIRECTIONAL_OFFSET,
-                    "option_type": opt_type,
-                    "action": "BUY",
-                    "quantity": qty,
-                    "entry_price": 0.0,  # Will be filled from quotes
-                }],
+                pick,
+                "directional",
+                direction,
+                legs=[
+                    {
+                        "symbol": option_symbol,
+                        "offset": DIRECTIONAL_OFFSET,
+                        "option_type": opt_type,
+                        "action": "BUY",
+                        "quantity": qty,
+                        "entry_price": 0.0,  # Will be filled from quotes
+                    }
+                ],
             )
         else:
             logger.error(f"❌ Directional order failed: {resp}")
             self.send_notification(
-                f"DIRECTIONAL {opt_type}", "FAILED",
+                f"DIRECTIONAL {opt_type}",
+                "FAILED",
                 f"Underlying: {pick['symbol']}\nError: {resp}",
             )
             return None
@@ -963,9 +961,7 @@ class IntradayOptionsBot:
         """Buy ATM Call + ATM Put (Long Straddle) for volatility play."""
         qty = self.get_position_size(pick["lot_size"])
 
-        logger.info(
-            f"📊 Long Straddle on {pick['symbol']} — ATM CE + PE, qty={qty}"
-        )
+        logger.info(f"📊 Long Straddle on {pick['symbol']} — ATM CE + PE, qty={qty}")
 
         resp = self.client.optionsmultiorder(
             strategy=self.strategy_name,
@@ -982,14 +978,16 @@ class IntradayOptionsBot:
             results = resp.get("results", [])
             legs = []
             for r in results:
-                legs.append({
-                    "symbol": r.get("symbol", "UNKNOWN"),
-                    "offset": r.get("offset", "ATM"),
-                    "option_type": r.get("option_type", ""),
-                    "action": "BUY",
-                    "quantity": qty,
-                    "entry_price": 0.0,
-                })
+                legs.append(
+                    {
+                        "symbol": r.get("symbol", "UNKNOWN"),
+                        "offset": r.get("offset", "ATM"),
+                        "option_type": r.get("option_type", ""),
+                        "action": "BUY",
+                        "quantity": qty,
+                        "entry_price": 0.0,
+                    }
+                )
             logger.info(f"✅ Straddle placed: {[leg['symbol'] for leg in legs]}")
             return self._create_position(pick, "straddle", "neutral", legs=legs)
         else:
@@ -1031,14 +1029,16 @@ class IntradayOptionsBot:
             results = resp.get("results", [])
             legs = []
             for i, r in enumerate(results):
-                legs.append({
-                    "symbol": r.get("symbol", "UNKNOWN"),
-                    "offset": legs_config[i]["offset"],
-                    "option_type": legs_config[i]["option_type"],
-                    "action": legs_config[i]["action"],
-                    "quantity": qty,
-                    "entry_price": 0.0,
-                })
+                legs.append(
+                    {
+                        "symbol": r.get("symbol", "UNKNOWN"),
+                        "offset": legs_config[i]["offset"],
+                        "option_type": legs_config[i]["option_type"],
+                        "action": legs_config[i]["action"],
+                        "quantity": qty,
+                        "entry_price": 0.0,
+                    }
+                )
             logger.info(f"✅ {label} placed: {[leg['symbol'] for leg in legs]}")
             return self._create_position(pick, "spread", direction, legs=legs)
         else:
@@ -1053,8 +1053,7 @@ class IntradayOptionsBot:
         long_off = f"OTM{CONDOR_LONG_OFFSET}"
 
         logger.info(
-            f"🦅 Iron Condor on {pick['symbol']} — "
-            f"Sell {short_off}, Buy {long_off}, qty={qty}"
+            f"🦅 Iron Condor on {pick['symbol']} — Sell {short_off}, Buy {long_off}, qty={qty}"
         )
 
         legs_config = [
@@ -1076,14 +1075,16 @@ class IntradayOptionsBot:
             results = resp.get("results", [])
             legs = []
             for i, r in enumerate(results):
-                legs.append({
-                    "symbol": r.get("symbol", "UNKNOWN"),
-                    "offset": legs_config[i]["offset"],
-                    "option_type": legs_config[i]["option_type"],
-                    "action": legs_config[i]["action"],
-                    "quantity": qty,
-                    "entry_price": 0.0,
-                })
+                legs.append(
+                    {
+                        "symbol": r.get("symbol", "UNKNOWN"),
+                        "offset": legs_config[i]["offset"],
+                        "option_type": legs_config[i]["option_type"],
+                        "action": legs_config[i]["action"],
+                        "quantity": qty,
+                        "entry_price": 0.0,
+                    }
+                )
             logger.info(f"✅ Iron Condor placed: {[leg['symbol'] for leg in legs]}")
             return self._create_position(pick, "iron_condor", "neutral", legs=legs)
         else:
@@ -1091,9 +1092,7 @@ class IntradayOptionsBot:
             self.send_notification("IRON CONDOR", "FAILED", f"Error: {resp}")
             return None
 
-    def _create_position(
-        self, pick: dict, strategy: str, direction: str, legs: list
-    ) -> dict:
+    def _create_position(self, pick: dict, strategy: str, direction: str, legs: list) -> dict:
         """Create and register a new position."""
         pos = {
             "id": self._next_position_id,
@@ -1144,9 +1143,7 @@ class IntradayOptionsBot:
 
             for leg in pos["legs"]:
                 try:
-                    q = self.client.quotes(
-                        symbol=leg["symbol"], exchange=pos["opt_exchange"]
-                    )
+                    q = self.client.quotes(symbol=leg["symbol"], exchange=pos["opt_exchange"])
                     if isinstance(q, dict) and q.get("status") == "success":
                         current_ltp = float(q.get("data", {}).get("ltp", 0))
                         # Set entry price on first check
@@ -1203,13 +1200,13 @@ class IntradayOptionsBot:
                 if not pos["trailing_active"]:
                     pos["trailing_active"] = True
                     logger.info(
-                        f"  📈 Trailing activated for position #{pos['id']} "
-                        f"at {pnl_pct:.1f}%"
+                        f"  📈 Trailing activated for position #{pos['id']} at {pnl_pct:.1f}%"
                     )
                 # Trail: if dropped 30% from best
                 best_pnl_pct = (
                     (pos["best_premium"] - total_entry) / premium_paid * 100
-                    if premium_paid > 0 else 0
+                    if premium_paid > 0
+                    else 0
                 )
                 trail_from_best = best_pnl_pct - pnl_pct
                 if trail_from_best > 30:
@@ -1315,7 +1312,8 @@ class IntradayOptionsBot:
                 for p in self.todays_picks
             )
             self.send_notification(
-                "PRE-MARKET SCAN", "COMPLETE",
+                "PRE-MARKET SCAN",
+                "COMPLETE",
                 f"Top {len(self.todays_picks)} picks:\n{pick_summary}",
             )
 
@@ -1364,11 +1362,7 @@ class IntradayOptionsBot:
             # Evaluate each pick for entry signals
             for pick in self.todays_picks:
                 # Skip if already have a position on this underlying
-                active_syms = [
-                    p["underlying"]
-                    for p in self.positions
-                    if p["status"] == "open"
-                ]
+                active_syms = [p["underlying"] for p in self.positions if p["status"] == "open"]
                 if pick["symbol"] in active_syms:
                     continue
 
@@ -1412,9 +1406,9 @@ class IntradayOptionsBot:
     def print_daily_summary(self):
         """Print and notify end-of-day summary."""
         closed_today = [
-            p for p in self.positions
-            if p["status"] == "closed"
-            and p["entry_time"].date() == datetime.now().date()
+            p
+            for p in self.positions
+            if p["status"] == "closed" and p["entry_time"].date() == datetime.now().date()
         ]
         total_pnl = sum(p["pnl"] for p in closed_today)
         winners = sum(1 for p in closed_today if p["pnl"] > 0)
@@ -1435,7 +1429,8 @@ class IntradayOptionsBot:
         logger.info(summary)
 
         self.send_notification(
-            "DAILY SUMMARY", "END OF DAY",
+            "DAILY SUMMARY",
+            "END OF DAY",
             f"Trades: {len(closed_today)} | "
             f"W/L: {winners}/{losers} ({win_rate:.1f}%)\n"
             f"P&L: ₹{total_pnl:,.2f}",
