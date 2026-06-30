@@ -124,3 +124,17 @@ clean: ## Remove build artifacts and caches
 clean-data: ## Remove all research run data (DESTRUCTIVE)
 	rm -rf data/runs/* data/cache/* data/exports/*
 	@echo "Data directories cleared."
+
+# === Bot Generation ===
+
+generate-bot: ## Generate a bot script for a specific stock (e.g. make generate-bot symbol=SBIN)
+	@SYMBOL="$(symbol)"; \
+	if [ -z "$$SYMBOL" ]; then \
+		SYMBOL="$(SYMBOL)"; \
+	fi; \
+	if [ -z "$$SYMBOL" ]; then \
+		echo "Usage: make generate-bot symbol=<STOCK_SYMBOL>"; \
+		echo "Example: make generate-bot symbol=SBIN"; \
+		exit 1; \
+	fi; \
+	$(PYTHON) scripts/generate_bot.py $$SYMBOL
