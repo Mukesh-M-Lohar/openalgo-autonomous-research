@@ -668,12 +668,14 @@ class IntradayOptionsBot:
         try:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=LOOKBACK_DAYS)
+            source = "db" if exchange.endswith("_INDEX") else "api"
             history = self.client.history(
                 symbol=symbol,
                 exchange=exchange,
                 interval=CANDLE_TIMEFRAME,
                 start_date=start_date.strftime("%Y-%m-%d"),
                 end_date=end_date.strftime("%Y-%m-%d"),
+                source=source,
             )
             if isinstance(history, pd.DataFrame) and not history.empty:
                 df = history.reset_index()

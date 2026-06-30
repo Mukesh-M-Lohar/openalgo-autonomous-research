@@ -156,12 +156,14 @@ class OpenAlgoStrategyBot:
         try:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=LOOKBACK_DAYS)
+            source = "db" if EXCHANGE.endswith("_INDEX") else "api"
             history_data = self.client.history(
                 symbol=SYMBOL,
                 exchange=EXCHANGE,
                 interval=CANDLE_TIMEFRAME,
                 start_date=start_date.strftime("%Y-%m-%d"),
                 end_date=end_date.strftime("%Y-%m-%d"),
+                source=source,
             )
             if isinstance(history_data, pd.DataFrame) and not history_data.empty:
                 df = history_data.reset_index()  # bring 'timestamp' back as a column
