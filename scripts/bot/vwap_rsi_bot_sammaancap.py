@@ -1,5 +1,5 @@
 """
-MCX VWAP + RSI Pullback Intraday Strategy Bot for OpenAlgo
+SAMMAANCAP VWAP + RSI Pullback Intraday Strategy Bot for OpenAlgo
 ---------------------------------------------------------
 This script can be executed standalone or uploaded directly to the OpenAlgo Strategy Runner.
 It reads API connections and trading parameters from environment variables.
@@ -43,7 +43,7 @@ API_HOST = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
 WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
 
 # Trade Parameters
-SYMBOL = os.getenv("SYMBOL", "MCX")
+SYMBOL = os.getenv("SYMBOL", "SAMMAANCAP")
 EXCHANGE = os.getenv("EXCHANGE", "NSE")
 QUANTITY = int(os.getenv("QUANTITY", "1"))
 PRODUCT = os.getenv("PRODUCT", "MIS")  # Intraday
@@ -54,9 +54,7 @@ SIGNAL_CHECK_INTERVAL = int(os.getenv("SIGNAL_CHECK_INTERVAL", "15"))
 # Leave empty to notify only the paired device (operator self-notification).
 # Example: "919790856795,919566029048"
 WHATSAPP_PHONES: list[str] = [
-    n.strip().lstrip("+")
-    for n in os.getenv("WHATSAPP_PHONES", "919566029048,919790856795").split(",")
-    if n.strip()
+    n.strip().lstrip("+") for n in os.getenv("WHATSAPP_PHONES", "").split(",") if n.strip()
 ]
 # Strategy Configuration
 RSI_PERIOD = 14
@@ -100,7 +98,7 @@ def compute_vwap(df: pd.DataFrame) -> pd.Series:
 class OpenAlgoStrategyBot:
     def __init__(self):
         self.client = api(api_key=API_KEY, host=API_HOST, ws_url=WS_URL)
-        self.strategy_name = os.getenv("STRATEGY_NAME", "MCX_VWAP_RSI_Intraday")
+        self.strategy_name = os.getenv("STRATEGY_NAME", "SAMMAANCAP_VWAP_RSI_Intraday")
         self.position = None  # "BUY", "SELL", or None
         self.entry_price = 0.0
         self.ltp = None

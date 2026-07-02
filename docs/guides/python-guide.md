@@ -344,7 +344,7 @@ class ConfigurableEMABot:
         # SELL: fast crosses below slow
         if prev["fast_ema"] >= prev["slow_ema"] and \
            last["fast_ema"] < last["slow_ema"]:
-            if TRADE_DIRECTION in ["SHORT", "BOTH"]:
+            if TRADE_DIRECTION in ["SELL", "BOTH"]:
                 return "SELL"
         return None
 

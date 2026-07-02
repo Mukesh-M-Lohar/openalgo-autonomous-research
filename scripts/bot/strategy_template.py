@@ -130,7 +130,7 @@ def compute_vwap(df: pd.DataFrame) -> pd.Series:
 # Replace the stub below with your own indicator-based entry / exit logic.
 # Return values:
 #   "BUY"   → open a long
-#   "SHORT" → open a short  (only when ALLOW_SHORT=True)
+#   "SELL" → open a short  (only when ALLOW_SHORT=True)
 #   "EXIT"  → close current position
 #   None    → no action
 # ==============================================================================
@@ -144,11 +144,11 @@ def compute_signals(df: pd.DataFrame, position: Optional[str]) -> Optional[str]:
     ----------
     df       : DataFrame with columns [timestamp, open, high, low, close, volume]
                Live LTP is already injected as the last close.
-    position : current position — "BUY", "SHORT", or None
+    position : current position — "BUY", "SELL", or None
 
     Returns
     -------
-    "BUY" | "SHORT" | "EXIT" | None
+    "BUY" | "SELL" | "EXIT" | None
     """
     # Guard — need enough bars for the slowest indicator
     min_bars = max(EMA_SLOW, RSI_PERIOD, ATR_PERIOD) + 5
@@ -171,7 +171,7 @@ def compute_signals(df: pd.DataFrame, position: Optional[str]) -> Optional[str]:
     # Exits
     if position == "BUY" and (bear_cross or r > 80):
         return "EXIT"
-    if position == "SHORT" and (bull_cross or r < 20):
+    if position == "SELL" and (bull_cross or r < 20):
         return "EXIT"
 
     # Entries
@@ -179,7 +179,7 @@ def compute_signals(df: pd.DataFrame, position: Optional[str]) -> Optional[str]:
         if bull_cross and 40 < r < 75:
             return "BUY"
         if ALLOW_SHORT and bear_cross and 25 < r < 60:
-            return "SHORT"
+            return "SELL"
 
     return None
 
@@ -423,7 +423,7 @@ class StrategyBot:
         # Stop-loss from live LTP
         if self.position and self.ltp and self.sl_price > 0:
             sl_hit = (self.position == "BUY" and self.ltp <= self.sl_price) or (
-                self.position == "SHORT" and self.ltp >= self.sl_price
+                self.position == "SELL" and self.ltp >= self.sl_price
             )
             if sl_hit:
                 logger.info(f"SL hit — LTP: {self.ltp:.2f}  SL: {self.sl_price:.2f}")
@@ -446,9 +446,9 @@ class StrategyBot:
         elif signal == "BUY" and self.position is None:
             logger.info("Signal: BUY")
             self.place_order("BUY")
-        elif signal == "SHORT" and self.position is None and ALLOW_SHORT:
+        elif signal == "SELL" and self.position is None and ALLOW_SHORT:
             logger.info("Signal: SHORT")
-            self.place_order("SHORT")
+            self.place_order("SELL")
 
     def run(self):
         ws = threading.Thread(target=self._ws_thread, daemon=True)

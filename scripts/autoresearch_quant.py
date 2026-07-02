@@ -195,7 +195,7 @@ def simulate_strategy(df, params, allow_short=False, commission_pct=0.03, slippa
                     {
                         "entry_time": timestamps[entry_idx],
                         "exit_time": time_idx,
-                        "direction": "LONG" if position == 1 else "SHORT",
+                        "direction": "LONG" if position == 1 else "SELL",
                         "pnl_pct": net_pnl * 100,
                         "reason": reason,
                     }

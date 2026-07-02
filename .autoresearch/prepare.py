@@ -187,7 +187,7 @@ def _simulate_trades(
     equity = initial_capital
     equity_points = []
 
-    position: str | None = None  # "long", "short", or None
+    position: str | None = None  # "long", "SELL", or None
     entry_price = 0.0
     entry_bar: int | None = None
     max_price_since_entry = 0.0
@@ -286,7 +286,7 @@ def _simulate_trades(
                     )
                     position = None
 
-            elif position == "short":
+            elif position == "SELL":
                 min_price_since_entry = min(min_price_since_entry, current_low)
 
                 # Check stop loss pct (short stop loss is above entry)
@@ -354,7 +354,7 @@ def _simulate_trades(
                             "entry_price": entry_price,
                             "exit_price": exit_price_val,
                             "exit_reason": exit_reason,
-                            "direction": "short",
+                            "direction": "SELL",
                         }
                     )
                     position = None
@@ -369,7 +369,7 @@ def _simulate_trades(
                 entry_price = float(row["open"]) * (1 - (commission_pct + slippage_pct) / 100)
                 entry_bar = i
                 min_price_since_entry = float(row["low"])
-                position = "short"
+                position = "SELL"
 
         equity_points.append({"equity": equity})
 

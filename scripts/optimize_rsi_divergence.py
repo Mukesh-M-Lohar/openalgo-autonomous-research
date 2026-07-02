@@ -188,7 +188,7 @@ def run_backtest(
                 )
                 position = None
 
-        elif position == "short":
+        elif position == "SELL":
             bars_held += 1
             min_price_since_entry = min(min_price_since_entry, low_vals[i])
 
@@ -224,7 +224,7 @@ def run_backtest(
 
                 trades.append(
                     {
-                        "type": "short",
+                        "type": "SELL",
                         "entry_time": entry_time,
                         "exit_time": timestamps[i],
                         "entry_price": entry_price,
@@ -249,7 +249,7 @@ def run_backtest(
                     max_price_since_entry = high_vals[i]
                     bars_held = 0
                 elif bear_signals.iloc[i]:
-                    position = "short"
+                    position = "SELL"
                     entry_price = close_vals[i]
                     entry_time = timestamps[i]
                     min_price_since_entry = low_vals[i]
