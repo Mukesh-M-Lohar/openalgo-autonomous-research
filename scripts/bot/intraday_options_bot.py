@@ -268,12 +268,125 @@ class OptionChainAnalyzer:
 
     def __init__(self, client):
         self.client = client
+        self._instruments_df = None
+
+    def get_nearest_expiry(self, symbol: str) -> str:
+        """Find the nearest weekly/monthly expiry date for a given symbol."""
+        try:
+            if self._instruments_df is None or self._instruments_df.empty:
+                logger.info("Downloading NFO instruments master database...")
+                df = self.client.instruments(exchange="NFO")
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    self._instruments_df = df
+                    logger.info(f"Loaded {len(df)} NFO instruments successfully.")
+                else:
+                    if isinstance(df, dict):
+                        logger.error(
+                            f"Failed to load instruments. Server returned error: {df.get('message', df)}"
+                        )
+                    else:
+                        logger.error(
+                            "Failed to load instruments. Response was empty or not a DataFrame."
+                        )
+                    return ""
+
+            df = self._instruments_df
+            sym_df = df[df["name"] == symbol].copy()
+            if sym_df.empty:
+                logger.warning(f"No NFO instruments found for symbol: {symbol}")
+                return ""
+
+            expiries = sym_df["expiry"].unique()
+            parsed_expiries = []
+
+            # Month mapping for robust manual parsing fallback
+            months_map = {
+                "JAN": 1,
+                "FEB": 2,
+                "MAR": 3,
+                "APR": 4,
+                "MAY": 5,
+                "JUN": 6,
+                "JUL": 7,
+                "AUG": 8,
+                "SEP": 9,
+                "OCT": 10,
+                "NOV": 11,
+                "DEC": 12,
+            }
+
+            for exp in expiries:
+                if not isinstance(exp, str) or not exp.strip():
+                    continue
+                exp_clean = exp.strip()
+
+                # 1. Try common strptime formats
+                dt = None
+                for fmt in ("%d-%b-%y", "%d-%b-%Y", "%Y-%m-%d", "%d%b%y", "%d%b%Y"):
+                    try:
+                        dt = datetime.strptime(exp_clean, fmt)
+                        break
+                    except Exception:
+                        pass
+
+                # 2. Manual parsing fallback (locale & case independent)
+                if dt is None:
+                    try:
+                        parts = exp_clean.replace("/", "-").split("-")
+                        if len(parts) == 3:
+                            day = int(parts[0])
+                            month = months_map.get(parts[1].upper())
+                            if month:
+                                year_str = parts[2]
+                                year = int(year_str)
+                                if len(year_str) == 2:
+                                    year += 2000
+                                dt = datetime(year, month, day)
+                    except Exception:
+                        pass
+
+                if dt is not None:
+                    parsed_expiries.append((dt, exp_clean))
+
+            if not parsed_expiries:
+                logger.warning(
+                    f"Could not parse any expiry dates for {symbol} from values: {expiries}"
+                )
+                return ""
+
+            parsed_expiries.sort(key=lambda x: x[0])
+            today = datetime.now().date()
+
+            # Find the nearest expiry today or in the future
+            for dt, orig_exp in parsed_expiries:
+                if dt.date() >= today:
+                    clean_exp = orig_exp.replace("-", "").upper()
+                    return clean_exp
+
+            # Fallback: if all expiries are in the past, return the closest/latest one
+            closest_exp = parsed_expiries[-1][1]
+            clean_exp = closest_exp.replace("-", "").upper()
+            logger.warning(
+                f"All expiries for {symbol} are in the past relative to today ({today}). "
+                f"Falling back to nearest past expiry: {clean_exp}"
+            )
+            return clean_exp
+        except Exception as e:
+            logger.warning(f"Failed to auto-detect nearest expiry for {symbol}: {e}")
+        return ""
 
     def fetch_chain(
         self, underlying: str, exchange: str, expiry_date: str = None, strike_count: int = 15
     ) -> dict | None:
         """Fetch option chain via OpenAlgo SDK."""
         try:
+            # If no expiry date is specified, resolve it dynamically from instruments
+            if not expiry_date:
+                expiry_date = self.get_nearest_expiry(underlying)
+                if not expiry_date:
+                    logger.warning(f"Could not resolve nearest expiry for {underlying}")
+                    return None
+
             kwargs = {
                 "underlying": underlying,
                 "exchange": exchange,
@@ -447,12 +560,21 @@ class FnOScanner:
                     pcr_score = 15 - abs(pcr - 1.0) * 10
                     score += max(0, pcr_score)
 
+                # Resolve lot size dynamically from instruments if available
+                lot_size = item["lot"]
+                if self.analyzer._instruments_df is not None:
+                    sym_df = self.analyzer._instruments_df[
+                        self.analyzer._instruments_df["name"] == sym
+                    ]
+                    if not sym_df.empty:
+                        lot_size = int(sym_df["lotsize"].iloc[0])
+
                 candidates.append(
                     {
                         "symbol": sym,
                         "exchange": exch,
                         "opt_exchange": item["opt_exchange"],
-                        "lot_size": item["lot"],
+                        "lot_size": lot_size,
                         "score": round(score, 1),
                         "underlying_ltp": underlying_ltp,
                         "atm_strike": atm_strike,
@@ -1123,6 +1245,7 @@ class IntradayOptionsBot:
             "underlying": pick["symbol"],
             "exchange": pick["exchange"],
             "opt_exchange": pick["opt_exchange"],
+            "expiry_date": pick.get("expiry_date", ""),
             "strategy": strategy,
             "direction": direction,
             "legs": legs,
@@ -1265,6 +1388,7 @@ class IntradayOptionsBot:
                     action=reverse_action,
                     quantity=leg["quantity"],
                     product=PRODUCT,
+                    expiry_date=pos.get("expiry_date"),
                 )
                 if isinstance(resp, dict) and resp.get("status") == "success":
                     logger.info(f"  ✅ Closed leg {leg['symbol']} via {reverse_action}")

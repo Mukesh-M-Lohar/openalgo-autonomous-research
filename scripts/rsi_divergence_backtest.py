@@ -409,7 +409,7 @@ def backtest_intraday_strategy(
                     "date": date,
                     "entry_time": entry_time,
                     "exit_time": exit_time,
-                    "direction": "SHORT",
+                    "direction": "SELL",
                     "entry_price": entry_price,
                     "exit_price": exit_price,
                     "pnl_pct": pnl * 100,

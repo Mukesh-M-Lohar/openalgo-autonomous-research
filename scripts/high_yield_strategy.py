@@ -128,7 +128,7 @@ def backtest_vwap_rsi(
                             "date": date,
                             "entry_time": entry_time,
                             "exit_time": time_idx,
-                            "direction": "LONG" if position == 1 else "SHORT",
+                            "direction": "LONG" if position == 1 else "SELL",
                             "entry_price": entry_price,
                             "exit_price": exit_price,
                             "pnl_pct": pnl * 100,

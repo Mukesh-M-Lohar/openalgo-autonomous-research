@@ -215,7 +215,7 @@ def run_backtest(
                 )
                 position = None
 
-        elif position == "short":
+        elif position == "SELL":
             bars_held += 1
             min_price_since_entry = min(min_price_since_entry, low_vals[i])
 
@@ -255,7 +255,7 @@ def run_backtest(
 
                 trades.append(
                     {
-                        "type": "short",
+                        "type": "SELL",
                         "entry_time": entry_time,
                         "exit_time": timestamps[i],
                         "entry_price": entry_price,
@@ -284,7 +284,7 @@ def run_backtest(
                     max_price_since_entry = high_vals[i]
                     bars_held = 0
                 elif bear_signals.iloc[i]:
-                    position = "short"
+                    position = "SELL"
                     entry_price = close_vals[i]
                     entry_time = timestamps[i]
                     min_price_since_entry = low_vals[i]
@@ -343,7 +343,7 @@ def calculate_performance_metrics(trades, equity, initial_capital=100000.0):
         "sharpe_ratio": sharpe,
         "avg_trade_pnl": df_trades["pnl_pct"].mean(),
         "long_trades": len(df_trades[df_trades["type"] == "long"]),
-        "short_trades": len(df_trades[df_trades["type"] == "short"]),
+        "short_trades": len(df_trades[df_trades["type"] == "SELL"]),
     }
 
 

@@ -5,7 +5,6 @@ Detects Open Interest (OI) surges on NIFTY option chains to place intraday MIS
 options orders with dynamic SL, trailing SL, and advanced exits.
 """
 
-import csv
 import logging
 import os
 import sys
@@ -83,10 +82,7 @@ TRAIL_BUFFER_AFTER_PROFIT = 10.0
 
 MIN_OI_ROWS = 17
 
-# CSV Log Filenames
-OI_DATA_FILE = "oi_data.csv"
-PLACED_ORDERS_FILE = "placed_orders_log.csv"
-SIMULATED_SELL_FILE = "simulated_sell.csv"
+# CSV Logging disabled (replaced with in-memory caching and SDK-based state queries)
 
 # ==============================================================================
 # BOT ENGINE
@@ -116,139 +112,326 @@ class NiftyOISurgerBot:
             f"Initialized Nifty OI Surger Bot | mode={TRADING_MODE} | qty={QUANTITY} | product={PRODUCT}"
         )
 
-    # ------------------------------------------------------------------ Recovery & CSVs
-    def load_history_from_csv(self):
-        """Pre-populate the rolling OI history from the local CSV to avoid warmup delays on restart."""
-        if not os.path.exists(OI_DATA_FILE):
-            logger.info("No existing oi_data.csv found. Warmup will require 17 minutes.")
+    # ------------------------------------------------------------------ Recovery & API Warmup
+    def get_nearest_nifty_expiry(self) -> str:
+        """Find the nearest NIFTY expiry date from the master instruments database."""
+        try:
+            df = self.client.instruments(exchange="NFO")
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                nifty_df = df[df["name"] == SYMBOL].copy()
+                if not nifty_df.empty:
+                    expiries = nifty_df["expiry"].unique()
+                    parsed_expiries = []
+                    for exp in expiries:
+                        try:
+                            # Try parsing 'DD-MMM-YY' (e.g., '07-JUL-26')
+                            dt = datetime.strptime(exp, "%d-%b-%y")
+                            parsed_expiries.append((dt, exp))
+                        except Exception:
+                            try:
+                                # Try parsing 'DD-MMM-YYYY' (e.g., '07-JUL-2026')
+                                dt = datetime.strptime(exp, "%d-%b-%Y")
+                                parsed_expiries.append((dt, exp))
+                            except Exception:
+                                pass
+
+                    parsed_expiries.sort(key=lambda x: x[0])
+                    today = datetime.now().date()
+                    for dt, orig_exp in parsed_expiries:
+                        if dt.date() >= today:
+                            # Format to 'DDMMMYY' expected by optionschain API
+                            clean_exp = orig_exp.replace("-", "").upper()
+                            return clean_exp
+        except Exception as e:
+            logger.warning(f"Failed to auto-detect nearest NIFTY expiry: {e}")
+        return ""
+
+    def warmup_history_from_api(self):
+        """Warm up the rolling OI history in-memory using history candles from the SDK."""
+        logger.info("Starting in-memory history warmup using OpenAlgo SDK...")
+        expiry_date = self.get_nearest_nifty_expiry()
+        if not expiry_date:
+            logger.warning(
+                "Could not resolve nearest expiry date for NIFTY. History warmup skipped."
+            )
             return
 
-        try:
-            df = pd.read_csv(OI_DATA_FILE)
-            if df.empty:
-                return
+        # 1. Fetch current option chain to resolve the strike symbols
+        chain_data = self.client.optionchain(
+            underlying=SYMBOL,
+            exchange=UNDERLYING_EXCHANGE,
+            expiry_date=expiry_date,
+            strike_count=15,
+        )
+        if not isinstance(chain_data, dict) or chain_data.get("status") != "success":
+            logger.warning(f"Failed to fetch option chain for warmup: {chain_data}")
+            return
 
-            # Keep only the last 60 rows for buffer warm-up
-            df_warm = df.tail(60)
-            for _, row in df_warm.iterrows():
-                self.oi_history.append(
-                    {
-                        "timestamp": pd.to_datetime(row["timestamp"]),
-                        "spot": float(row["spot"]),
-                        "atm_strike": float(row["atm_strike"]),
-                        "ce_oi": float(row["ce_oi"]),
-                        "pe_oi": float(row["pe_oi"]),
-                        "total_volume": float(row["total_volume"]),
-                        "volume_ce": float(row["volume_ce"]),
-                        "volume_pe": float(row["volume_pe"]),
-                    }
-                )
-            logger.info(f"Warmed up history with {len(self.oi_history)} rows from oi_data.csv.")
-        except Exception as e:
-            logger.warning(f"Could not load warmup history from {OI_DATA_FILE}: {e}")
+        # 2. Extract CE and PE symbols
+        ce_symbols = []
+        pe_symbols = []
+        for item in chain_data.get("chain", []):
+            ce = item.get("ce") or {}
+            pe = item.get("pe") or {}
+            if ce.get("symbol"):
+                ce_symbols.append(ce["symbol"])
+            if pe.get("symbol"):
+                pe_symbols.append(pe["symbol"])
 
-    def write_oi_row_to_csv(self, row_dict: Dict[str, Any]):
-        """Append one minute of OI summary stats to the CSV file."""
-        file_exists = os.path.exists(OI_DATA_FILE)
-        try:
-            with open(OI_DATA_FILE, "a", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                if not file_exists:
-                    writer.writerow(
-                        [
-                            "timestamp",
-                            "spot",
-                            "atm_strike",
-                            "ce_oi",
-                            "pe_oi",
-                            "total_volume",
-                            "volume_ce",
-                            "volume_pe",
-                        ]
-                    )
-                writer.writerow(
-                    [
-                        row_dict["timestamp"].strftime("%Y-%m-%d %H:%M:%S"),
-                        row_dict["spot"],
-                        row_dict["atm_strike"],
-                        row_dict["ce_oi"],
-                        row_dict["pe_oi"],
-                        row_dict["total_volume"],
-                        row_dict["volume_ce"],
-                        row_dict["volume_pe"],
-                    ]
-                )
-        except Exception as e:
-            logger.error(f"Failed to write to {OI_DATA_FILE}: {e}")
+        if not ce_symbols or not pe_symbols:
+            logger.warning("No option chain symbols resolved. Warmup aborted.")
+            return
 
-    def check_reentry_and_recovery(self):
-        """Validate whether we already traded today and enforce re-entry/cooldown logic."""
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        # 3. Fetch underlying index history to get base timestamps and spot prices
+        today = datetime.now()
+        start_date = today - timedelta(days=2)  # Check past 2 days to guarantee enough 1m candles
 
-        last_buy = None
-        if os.path.exists(PLACED_ORDERS_FILE):
+        spot_df = self.client.history(
+            symbol=SYMBOL,
+            exchange=UNDERLYING_EXCHANGE,
+            interval="1m",
+            start_date=start_date.strftime("%Y-%m-%d"),
+            end_date=today.strftime("%Y-%m-%d"),
+            source="db",
+        )
+        if not isinstance(spot_df, pd.DataFrame) or spot_df.empty:
+            logger.warning("Could not fetch underlying spot history. Warmup aborted.")
+            return
+
+        # Align to the last 60 minutes of spot data
+        target_timestamps = spot_df.index[-60:]
+
+        # Initialize historical mapping
+        history_map = {}
+        for ts in target_timestamps:
+            close_price = spot_df.loc[ts, "close"]
+            # Handle possible duplicate index entries
+            if isinstance(close_price, pd.Series):
+                close_price = close_price.iloc[0]
+
+            history_map[ts] = {
+                "spot": float(close_price),
+                "ce_oi": 0.0,
+                "pe_oi": 0.0,
+                "volume_ce": 0.0,
+                "volume_pe": 0.0,
+            }
+
+        # 4. Fetch history for all option symbols in the chain and aggregate
+        logger.info(f"Fetching history for {len(ce_symbols) + len(pe_symbols)} option contracts...")
+
+        for ce_sym in ce_symbols:
             try:
-                with open(PLACED_ORDERS_FILE, "r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    rows = list(reader)
-                    for row in reversed(rows):
-                        ts_str = row.get("timestamp", "")
-                        if ts_str.startswith(today_str):
-                            last_buy = row
-                            break
+                df = self.client.history(
+                    symbol=ce_sym,
+                    exchange=OPTIONS_EXCHANGE,
+                    interval="1m",
+                    start_date=start_date.strftime("%Y-%m-%d"),
+                    end_date=today.strftime("%Y-%m-%d"),
+                    source="api",
+                )
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    for ts in target_timestamps:
+                        if ts in df.index:
+                            row_data = df.loc[ts]
+                            oi_val = row_data["oi"]
+                            vol_val = row_data["volume"]
+                            if isinstance(oi_val, pd.Series):
+                                oi_val = oi_val.iloc[0]
+                            if isinstance(vol_val, pd.Series):
+                                vol_val = vol_val.iloc[0]
+
+                            if pd.notna(oi_val):
+                                history_map[ts]["ce_oi"] += float(oi_val)
+                            if pd.notna(vol_val):
+                                history_map[ts]["volume_ce"] += float(vol_val)
             except Exception as e:
-                logger.error(f"Error reading {PLACED_ORDERS_FILE}: {e}")
+                logger.debug(f"Could not fetch/parse history for CE {ce_sym}: {e}")
 
-        if not last_buy:
-            logger.info("No previous trades found for today. Starting fresh.")
-            return
+        for pe_sym in pe_symbols:
+            try:
+                df = self.client.history(
+                    symbol=pe_sym,
+                    exchange=OPTIONS_EXCHANGE,
+                    interval="1m",
+                    start_date=start_date.strftime("%Y-%m-%d"),
+                    end_date=today.strftime("%Y-%m-%d"),
+                    source="api",
+                )
+                if isinstance(df, pd.DataFrame) and not df.empty:
+                    for ts in target_timestamps:
+                        if ts in df.index:
+                            row_data = df.loc[ts]
+                            oi_val = row_data["oi"]
+                            vol_val = row_data["volume"]
+                            if isinstance(oi_val, pd.Series):
+                                oi_val = oi_val.iloc[0]
+                            if isinstance(vol_val, pd.Series):
+                                vol_val = vol_val.iloc[0]
 
-        self.is_reentry = True
+                            if pd.notna(oi_val):
+                                history_map[ts]["pe_oi"] += float(oi_val)
+                            if pd.notna(vol_val):
+                                history_map[ts]["volume_pe"] += float(vol_val)
+            except Exception as e:
+                logger.debug(f"Could not fetch/parse history for PE {pe_sym}: {e}")
+
+        # 5. Populate self.oi_history
+        self.oi_history = []
+        for ts in sorted(history_map.keys()):
+            row = history_map[ts]
+            spot_val = row["spot"]
+            atm_strike = round(spot_val / 50) * 50
+            ts_naive = ts.to_pydatetime().replace(tzinfo=None)
+
+            self.oi_history.append(
+                {
+                    "timestamp": ts_naive,
+                    "spot": spot_val,
+                    "atm_strike": float(atm_strike),
+                    "ce_oi": row["ce_oi"],
+                    "pe_oi": row["pe_oi"],
+                    "total_volume": row["volume_ce"] + row["volume_pe"],
+                    "volume_ce": row["volume_ce"],
+                    "volume_pe": row["volume_pe"],
+                }
+            )
+
         logger.info(
-            f"Previous trade found today: {last_buy['trading_symbol']} bought at {last_buy['ltp']}"
+            f"Successfully warmed up in-memory history with {len(self.oi_history)} data points."
         )
 
-        # Enforce no re-entry on Expiry day (Tuesdays)
-        if datetime.now().weekday() == 1:
-            logger.warning("Re-entry is blocked on Tuesday (expiry day). Exiting bot.")
-            sys.exit(0)
+    def check_reentry_and_recovery(self):
+        """Query tradebook and positionbook from SDK to recover trade state and enforce cooldown/re-entry logic."""
+        logger.info("Checking today's tradebook and active positions for recovery...")
 
-        # Check if corresponding sell log exists
-        last_sell = None
-        if os.path.exists(SIMULATED_SELL_FILE):
-            try:
-                with open(SIMULATED_SELL_FILE, "r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    rows = list(reader)
-                    for row in reversed(rows):
-                        sym = row.get("trading_symbol", "")
-                        ts_str = row.get("exit_time", "")
-                        if sym == last_buy["trading_symbol"] and ts_str.startswith(today_str):
-                            last_sell = row
-                            break
-            except Exception as e:
-                logger.error(f"Error reading {SIMULATED_SELL_FILE}: {e}")
-
-        if not last_sell:
-            logger.error(
-                "No sell data found for the previous placed order today. Exiting bot for safety."
-            )
-            sys.exit(0)
-
-        # Re-entry recovery cooldown
+        # 1. Check current positions to recover active trades
         try:
-            exit_time = datetime.strptime(last_sell["exit_time"], "%Y-%m-%d %H:%M:%S")
-            elapsed = (datetime.now() - exit_time).total_seconds() / 60.0
-            if elapsed < REENTRY_COOLDOWN_MINUTES:
-                cooldown_rem = REENTRY_COOLDOWN_MINUTES - elapsed
-                self.cooldown_until = datetime.now() + timedelta(minutes=cooldown_rem)
-                logger.info(
-                    f"Re-entry cooldown active. Cooldown remaining: {cooldown_rem:.1f} minutes."
-                )
-            else:
-                logger.info("Re-entry cooldown has expired. Ready to search for entries.")
+            p_resp = self.client.positionbook()
+            if isinstance(p_resp, dict) and p_resp.get("status") == "success":
+                positions = p_resp.get("data", [])
+                for pos in positions:
+                    symbol = pos.get("symbol", "")
+                    qty = int(pos.get("quantity", 0))
+                    # Check if we have an active (non-zero) position in a NIFTY weekly option
+                    if symbol.startswith(SYMBOL) and qty != 0:
+                        logger.info(
+                            f"Active position found in NIFTY options: {symbol} with quantity {qty}"
+                        )
+
+                        # Recover position details
+                        action = "BUY" if qty > 0 else "SELL"
+                        avg_price = float(pos.get("average_price", 0.0))
+
+                        # Parse option type and strike from symbol
+                        # NIFTY option symbols follow format: NIFTY[expiry][strike][type]
+                        # E.g. NIFTY07JUL2623900CE -> CE, strike=23900
+                        option_type = "CE" if symbol.endswith("CE") else "PE"
+
+                        # Extract strike digits from symbol
+                        strike_str = ""
+                        for char in reversed(symbol[:-2]):
+                            if char.isdigit():
+                                strike_str = char + strike_str
+                            else:
+                                break
+                        strike = float(strike_str) if strike_str else 0.0
+
+                        vix = self.get_india_vix()
+                        high_vix = vix > VIX_HIGH_THRESHOLD
+                        sl_min = INITIAL_SL_MIN_HIGH_VIX if high_vix else INITIAL_SL_MIN
+                        sl_max = INITIAL_SL_MAX_HIGH_VIX if high_vix else INITIAL_SL_MAX
+                        initial_sl = max(sl_min, min(sl_max, round(avg_price * INITIAL_SL_PCT)))
+
+                        self.current_sl_trigger = max(1.0, avg_price - initial_sl)
+                        self.buffer_price = avg_price + initial_sl
+                        self.trail_count = 0
+                        self.best_premium = avg_price
+                        self.early_adverse_checked = False
+
+                        self.position = {
+                            "trading_symbol": symbol,
+                            "option_type": option_type,
+                            "entry_price": avg_price,
+                            "entry_time": datetime.now(),  # fallback to now
+                            "vix": vix,
+                            "expiry_date": "",  # will be resolved dynamically
+                            "trend_list": "Recovered",
+                            "strike": strike,
+                            "initial_sl": initial_sl,
+                        }
+                        self.ltp_history = [avg_price]
+                        logger.info(f"Successfully recovered position: {symbol} @ {avg_price}")
+                        return
         except Exception as e:
-            logger.error(f"Error parsing last exit time: {e}. Defaulting to no cooldown.")
+            logger.error(f"Error checking position book: {e}")
+
+        # 2. Check trades executed today for reentry and cooldown logic
+        try:
+            t_resp = self.client.tradebook()
+            if not isinstance(t_resp, dict) or t_resp.get("status") != "success":
+                logger.warning(f"Could not retrieve tradebook for recovery: {t_resp}")
+                return
+
+            trades = t_resp.get("data", [])
+            # Filter trades matching NIFTY options and MIS product
+            option_trades = []
+            for t in trades:
+                symbol = t.get("symbol", "")
+                product = t.get("product", "")
+                if symbol.startswith(SYMBOL) and product == PRODUCT:
+                    option_trades.append(t)
+
+            if not option_trades:
+                logger.info("No NIFTY option trades found for today. Starting fresh.")
+                return
+
+            # Set reentry flag since trades occurred today
+            self.is_reentry = True
+
+            # Enforce no re-entry on Expiry day (Tuesdays)
+            if datetime.now().weekday() == 1:
+                logger.warning("Re-entry is blocked on Tuesday (expiry day). Exiting bot.")
+                sys.exit(0)
+
+            # Sort trades by timestamp descending to find last sell/exit trade
+            # Timestamp format example: '30-Jun-2026 13:15:20'
+            def get_timestamp(trade):
+                ts_str = trade.get("timestamp", "")
+                try:
+                    return datetime.strptime(ts_str, "%d-%b-%Y %H:%M:%S")
+                except Exception:
+                    return datetime.min
+
+            option_trades.sort(key=get_timestamp, reverse=True)
+
+            # Find the most recent SELL trade to determine cooldown
+            last_sell = None
+            for t in option_trades:
+                if t.get("action") == "SELL":
+                    last_sell = t
+                    break
+
+            if not last_sell:
+                logger.warning(
+                    "BUY trade found today, but no matching SELL trade found. Safe restart assumed closed."
+                )
+                return
+
+            # Apply reentry recovery cooldown
+            exit_time = get_timestamp(last_sell)
+            if exit_time != datetime.min:
+                elapsed = (datetime.now() - exit_time).total_seconds() / 60.0
+                if elapsed < REENTRY_COOLDOWN_MINUTES:
+                    cooldown_rem = REENTRY_COOLDOWN_MINUTES - elapsed
+                    self.cooldown_until = datetime.now() + timedelta(minutes=cooldown_rem)
+                    logger.info(
+                        f"Re-entry cooldown active. Cooldown remaining: {cooldown_rem:.1f} minutes."
+                    )
+                else:
+                    logger.info("Re-entry cooldown has expired. Ready to search for entries.")
+        except Exception as e:
+            logger.error(f"Error parsing tradebook recovery data: {e}")
 
     # ------------------------------------------------------------------ Market Timing
     def is_market_open(self, now: datetime) -> bool:
@@ -665,8 +848,16 @@ class NiftyOISurgerBot:
 
         # Fetch option chain
         logger.info("Polling option chain for signals...")
+        expiry_date = self.get_nearest_nifty_expiry()
+        if not expiry_date:
+            logger.warning("Could not resolve nearest expiry date for NIFTY. Signal check aborted.")
+            return
+
         chain_data = self.client.optionchain(
-            underlying=SYMBOL, exchange=UNDERLYING_EXCHANGE, strike_count=15
+            underlying=SYMBOL,
+            exchange=UNDERLYING_EXCHANGE,
+            expiry_date=expiry_date,
+            strike_count=15,
         )
         if not isinstance(chain_data, dict) or chain_data.get("status") != "success":
             logger.warning(f"Failed to fetch option chain: {chain_data}")
@@ -702,8 +893,7 @@ class NiftyOISurgerBot:
         if len(self.oi_history) > 60:
             self.oi_history.pop(0)
 
-        # Save to CSV
-        self.write_oi_row_to_csv(new_row)
+        # Save to CSV disabled (now utilizing in-memory history rollup)
 
         if len(self.oi_history) < MIN_OI_ROWS:
             logger.info(f"Warming up indicators ({len(self.oi_history)}/{MIN_OI_ROWS} rows).")
@@ -787,35 +977,7 @@ class NiftyOISurgerBot:
             }
             self.ltp_history = [fill_price]
 
-            # Log order
-            try:
-                with open(PLACED_ORDERS_FILE, "a", newline="", encoding="utf-8") as f:
-                    writer = csv.writer(f)
-                    if f.tell() == 0:
-                        writer.writerow(
-                            [
-                                "timestamp",
-                                "trading_symbol",
-                                "option_type",
-                                "ltp",
-                                "strike",
-                                "signal",
-                                "trend_list",
-                            ]
-                        )
-                    writer.writerow(
-                        [
-                            now.strftime("%Y-%m-%d %H:%M:%S"),
-                            resolved_symbol,
-                            option_type,
-                            fill_price,
-                            self.position["strike"],
-                            signal_name,
-                            trend_list,
-                        ]
-                    )
-            except Exception as e:
-                logger.error(f"Error logging to {PLACED_ORDERS_FILE}: {e}")
+            # Placed order logging to CSV disabled (state maintained in-memory and recovered via API)
 
             # Send Notification
             self.send_alert(
@@ -867,61 +1029,7 @@ class NiftyOISurgerBot:
             pnl = exit_price - entry_price
             logger.info(f"✅ Closed position {symbol} @ {exit_price} | P&L: {pnl:.2f} pts")
 
-            # Write exit trade log
-            try:
-                with open(SIMULATED_SELL_FILE, "a", newline="", encoding="utf-8") as f:
-                    writer = csv.writer(f)
-                    if f.tell() == 0:
-                        writer.writerow(
-                            [
-                                "timestamp",
-                                "entry_time",
-                                "exit_time",
-                                "trading_symbol",
-                                "option_type",
-                                "entry_price",
-                                "exit_price",
-                                "exit_reason",
-                                "pnl",
-                                "initial_sl",
-                                "current_sl_trigger",
-                                "trail_count",
-                                "vix",
-                                "expiry_date",
-                                "trend_list",
-                                "strike",
-                                "quantity",
-                                "product",
-                                "best_premium",
-                                "buffer_price",
-                            ]
-                        )
-                    writer.writerow(
-                        [
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            self.position["entry_time"].strftime("%Y-%m-%d %H:%M:%S"),
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            symbol,
-                            option_type,
-                            entry_price,
-                            exit_price,
-                            reason,
-                            pnl,
-                            self.position["initial_sl"],
-                            self.current_sl_trigger,
-                            self.trail_count,
-                            self.position["vix"],
-                            self.position["expiry_date"],
-                            self.position["trend_list"],
-                            self.position["strike"],
-                            QUANTITY,
-                            PRODUCT,
-                            self.best_premium,
-                            self.buffer_price,
-                        ]
-                    )
-            except Exception as e:
-                logger.error(f"Error logging to {SIMULATED_SELL_FILE}: {e}")
+            # Exit trade logging to CSV disabled (state maintained in-memory and recovered via API)
 
             # Send Notification
             self.send_alert(
@@ -1091,7 +1199,7 @@ class NiftyOISurgerBot:
     def run(self):
         logger.info("Bot execution started. Polling every 15 seconds.")
         self.check_reentry_and_recovery()
-        self.load_history_from_csv()
+        self.warmup_history_from_api()
 
         while self.running:
             try:
