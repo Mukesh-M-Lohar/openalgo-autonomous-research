@@ -33,6 +33,13 @@ class BacktestResult:
     avg_hold_bars: float = 0.0
     max_consecutive_wins: int = 0
     max_consecutive_losses: int = 0
+    max_drawdown_duration_bars: int = 0
+    avg_drawdown_duration_bars: float = 0.0
+    kelly_fraction: float = 0.0
+    half_kelly_fraction: float = 0.0
+    optimal_leverage: float = 0.0
+    deflated_sharpe: float = 0.0
+    information_ratio: float = 0.0
     trades: list[dict] = field(default_factory=list, repr=False)
 
     def to_dict(self) -> dict:
@@ -60,6 +67,13 @@ class BacktestResult:
             "avg_hold_bars": self.avg_hold_bars,
             "max_consecutive_wins": self.max_consecutive_wins,
             "max_consecutive_losses": self.max_consecutive_losses,
+            "max_drawdown_duration_bars": self.max_drawdown_duration_bars,
+            "avg_drawdown_duration_bars": self.avg_drawdown_duration_bars,
+            "kelly_fraction": self.kelly_fraction,
+            "half_kelly_fraction": self.half_kelly_fraction,
+            "optimal_leverage": self.optimal_leverage,
+            "deflated_sharpe": self.deflated_sharpe,
+            "information_ratio": self.information_ratio,
         }
 
 

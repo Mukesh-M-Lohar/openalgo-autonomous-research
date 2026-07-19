@@ -30,6 +30,7 @@ class IndicatorType(str, Enum):
     DONCHIAN_UPPER = "donchian_upper"
     DONCHIAN_LOWER = "donchian_lower"
     SUPERTREND = "supertrend"
+    HURST_SUPERTREND = "hurst_supertrend"
     STOCH_K = "stoch_k"
     STOCH_D = "stoch_d"
     CCI = "cci"

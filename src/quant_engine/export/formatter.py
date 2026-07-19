@@ -173,6 +173,72 @@ def _compute_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 
     return supertrend
 
 
+def _compute_hurst_supertrend(df: pd.DataFrame, h_period: int = 60, h_lag: int = 10, kf_gain: float = 0.2, atr_len: int = 10, atr_base: float = 1.5, atr_hscale: float = 3.0) -> pd.Series:
+    close = df["close"]
+    
+    var1 = (close - close.shift(1)).rolling(h_period).var()
+    varq = (close - close.shift(h_lag)).rolling(h_period).var()
+    
+    H_raw = np.log(varq / np.maximum(var1, 1e-10)) / (2.0 * np.log(h_lag))
+    H = np.maximum(0.0, np.minimum(H_raw, 1.0))
+    safeH = H.fillna(0.5)
+
+    adaptive_gain = np.maximum(np.minimum(kf_gain * (0.5 + safeH), 0.99), 0.01)
+    
+    kf = np.zeros(len(close))
+    if len(close) > 0:
+        kf[0] = close.iloc[0] if not np.isnan(close.iloc[0]) else 0.0
+    for i in range(1, len(close)):
+        if np.isnan(kf[i-1]):
+            kf[i] = close.iloc[i] if not np.isnan(close.iloc[i]) else 0.0
+        else:
+            val = close.iloc[i] if not np.isnan(close.iloc[i]) else kf[i-1]
+            kf[i] = kf[i-1] + adaptive_gain.iloc[i] * (val - kf[i-1])
+    kf_series = pd.Series(kf, index=close.index)
+
+    atr = _compute_atr(df, atr_len)
+    h_mult = atr_base + atr_hscale * (1.0 - safeH)
+    band = atr * h_mult
+
+    upBand = kf_series - band
+    dnBand = kf_series + band
+
+    supertrend = pd.Series(np.nan, index=df.index)
+    direction = pd.Series(1, index=df.index)
+
+    for i in range(1, len(df)):
+        prev_dir = direction.iloc[i - 1]
+        prev_up = upBand.iloc[i - 1] if not np.isnan(upBand.iloc[i - 1]) else close.iloc[i]
+        prev_dn = dnBand.iloc[i - 1] if not np.isnan(dnBand.iloc[i - 1]) else close.iloc[i]
+
+        curr_up = kf_series.iloc[i] - band.iloc[i]
+        curr_dn = kf_series.iloc[i] + band.iloc[i]
+
+        if prev_dir == 1:
+            upBand.iloc[i] = max(curr_up, prev_up)
+        else:
+            upBand.iloc[i] = curr_up
+
+        if prev_dir == -1:
+            dnBand.iloc[i] = min(curr_dn, prev_dn)
+        else:
+            dnBand.iloc[i] = curr_dn
+
+        if kf_series.iloc[i] > prev_dn:
+            direction.iloc[i] = 1
+        elif kf_series.iloc[i] < prev_up:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = prev_dir
+
+        if direction.iloc[i] == 1:
+            supertrend.iloc[i] = upBand.iloc[i]
+        else:
+            supertrend.iloc[i] = dnBand.iloc[i]
+
+    return supertrend
+
+
 def _compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     high, low, close = df["high"], df["low"], df["close"]
     plus_dm = high.diff()
@@ -590,6 +656,14 @@ if __name__ == "__main__":
             period = int(params.get("period", 10))
             multiplier = float(params.get("multiplier", 3.0))
             return f'df["{name}"] = _compute_supertrend(df, {period}, {multiplier})'
+        elif node.indicator_type.value == "hurst_supertrend":
+            h_period = int(params.get("h_period", 60))
+            h_lag = int(params.get("h_lag", 10))
+            kf_gain = float(params.get("kf_gain", 0.2))
+            atr_len = int(params.get("atr_len", 10))
+            atr_base = float(params.get("atr_base", 1.5))
+            atr_hscale = float(params.get("atr_hscale", 3.0))
+            return f'df["{name}"] = _compute_hurst_supertrend(df, {h_period}, {h_lag}, {kf_gain}, {atr_len}, {atr_base}, {atr_hscale})'
         elif node.indicator_type.value in ("stoch_k", "stoch_d"):
             k_period = int(params.get("k_period", 14))
             smooth_k = int(params.get("smooth_k", 3))

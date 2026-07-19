@@ -7,6 +7,7 @@ import random
 from typing import Iterator
 
 from quant_engine.config import ResearchConfig, StyleOverride
+from quant_engine.data.analyzer import RegimeAnalysis, MarketRegime
 from quant_engine.generation.grammar import GrammarConfig, generate_strategy
 from quant_engine.generation.indicators import INDICATOR_CATEGORIES
 from quant_engine.models.strategy import (
@@ -30,8 +31,9 @@ STYLE_TIMEFRAMES: dict[TradingStyle, list[TimeframeType]] = {
 class StrategyGenerator:
     """Generates candidate strategies based on research config."""
 
-    def __init__(self, config: ResearchConfig):
+    def __init__(self, config: ResearchConfig, regime_analysis: RegimeAnalysis | None = None):
         self._config = config
+        self._regime_analysis = regime_analysis
         self._seen_fingerprints: set[str] = set()
 
     def generate(self) -> list[StrategyGenome]:
@@ -89,9 +91,24 @@ class StrategyGenerator:
         gen_cfg = self._config.generation
         style_override = self._config.style_overrides.get(style.value, StyleOverride())
 
+        # Regime-based adaptation
+        indicator_categories = gen_cfg.indicator_categories
+        max_hold_bars = style_override.max_hold_bars
+        
+        if self._regime_analysis:
+            if self._regime_analysis.regime == MarketRegime.TRENDING:
+                indicator_categories = ["trend", "momentum"]
+            elif self._regime_analysis.regime == MarketRegime.MEAN_REVERTING:
+                indicator_categories = ["oscillator", "volatility", "volume"]
+                # Constrain holding period by half-life for mean-reverting strategies (Chan Ch.2)
+                if self._regime_analysis.half_life_bars < float('inf'):
+                    hl_bars = int(self._regime_analysis.half_life_bars * 1.5)  # give some breathing room
+                    if max_hold_bars is None or hl_bars < max_hold_bars:
+                        max_hold_bars = max(2, hl_bars)
+
         # Resolve allowed indicators from categories
         allowed_indicators = []
-        for cat in gen_cfg.indicator_categories:
+        for cat in indicator_categories:
             allowed_indicators.extend(INDICATOR_CATEGORIES.get(cat, []))
         if not allowed_indicators:
             allowed_indicators = list(IndicatorType)
@@ -109,7 +126,7 @@ class StrategyGenerator:
             allow_short=gen_cfg.allow_short,
             product_type=style_override.product_type,
             forced_exit_time=style_override.forced_exit_time,
-            max_hold_bars=style_override.max_hold_bars,
+            max_hold_bars=max_hold_bars,
             min_hold_bars=style_override.min_hold_bars,
         )
 
