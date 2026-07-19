@@ -222,6 +222,79 @@ def _supertrend(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
     return supertrend
 
 
+def _hurst_supertrend(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
+    h_period = int(params.get("h_period", 60))
+    h_lag = int(params.get("h_lag", 10))
+    kf_gain = float(params.get("kf_gain", 0.2))
+    atr_len = int(params.get("atr_len", 10))
+    atr_base = float(params.get("atr_base", 1.5))
+    atr_hscale = float(params.get("atr_hscale", 3.0))
+
+    close = df["close"]
+    
+    var1 = (close - close.shift(1)).rolling(h_period).var()
+    varq = (close - close.shift(h_lag)).rolling(h_period).var()
+    
+    H_raw = np.log(varq / np.maximum(var1, 1e-10)) / (2.0 * np.log(h_lag))
+    H = np.maximum(0.0, np.minimum(H_raw, 1.0))
+    safeH = H.fillna(0.5)
+
+    adaptive_gain = np.maximum(np.minimum(kf_gain * (0.5 + safeH), 0.99), 0.01)
+    
+    kf = np.zeros(len(close))
+    if len(close) > 0:
+        kf[0] = close.iloc[0] if not np.isnan(close.iloc[0]) else 0.0
+    for i in range(1, len(close)):
+        if np.isnan(kf[i-1]):
+            kf[i] = close.iloc[i] if not np.isnan(close.iloc[i]) else 0.0
+        else:
+            val = close.iloc[i] if not np.isnan(close.iloc[i]) else kf[i-1]
+            kf[i] = kf[i-1] + adaptive_gain.iloc[i] * (val - kf[i-1])
+    kf_series = pd.Series(kf, index=close.index)
+
+    atr = _atr(df, src, {"period": atr_len})
+    h_mult = atr_base + atr_hscale * (1.0 - safeH)
+    band = atr * h_mult
+
+    upBand = kf_series - band
+    dnBand = kf_series + band
+
+    supertrend = pd.Series(np.nan, index=df.index)
+    direction = pd.Series(1, index=df.index)
+
+    for i in range(1, len(df)):
+        prev_dir = direction.iloc[i - 1]
+        prev_up = upBand.iloc[i - 1] if not np.isnan(upBand.iloc[i - 1]) else close.iloc[i]
+        prev_dn = dnBand.iloc[i - 1] if not np.isnan(dnBand.iloc[i - 1]) else close.iloc[i]
+
+        curr_up = kf_series.iloc[i] - band.iloc[i]
+        curr_dn = kf_series.iloc[i] + band.iloc[i]
+
+        if prev_dir == 1:
+            upBand.iloc[i] = max(curr_up, prev_up)
+        else:
+            upBand.iloc[i] = curr_up
+
+        if prev_dir == -1:
+            dnBand.iloc[i] = min(curr_dn, prev_dn)
+        else:
+            dnBand.iloc[i] = curr_dn
+
+        if kf_series.iloc[i] > prev_dn:
+            direction.iloc[i] = 1
+        elif kf_series.iloc[i] < prev_up:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = prev_dir
+
+        if direction.iloc[i] == 1:
+            supertrend.iloc[i] = upBand.iloc[i]
+        else:
+            supertrend.iloc[i] = dnBand.iloc[i]
+
+    return supertrend
+
+
 def _stoch_k(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Series:
     k_period = int(params.get("k_period", 14))
     smooth_k = int(params.get("smooth_k", 3))
@@ -298,6 +371,7 @@ INDICATOR_FUNCTIONS: dict = {
     IndicatorType.DONCHIAN_UPPER: _donchian_upper,
     IndicatorType.DONCHIAN_LOWER: _donchian_lower,
     IndicatorType.SUPERTREND: _supertrend,
+    IndicatorType.HURST_SUPERTREND: _hurst_supertrend,
     IndicatorType.STOCH_K: _stoch_k,
     IndicatorType.STOCH_D: _stoch_d,
     IndicatorType.CCI: _cci,
@@ -345,6 +419,14 @@ INDICATOR_PARAM_RANGES: dict[IndicatorType, dict[str, tuple[float, float, float]
     IndicatorType.DONCHIAN_UPPER: {"period": (10, 50, 5)},
     IndicatorType.DONCHIAN_LOWER: {"period": (10, 50, 5)},
     IndicatorType.SUPERTREND: {"period": (7, 14, 1), "multiplier": (1.5, 4.0, 0.5)},
+    IndicatorType.HURST_SUPERTREND: {
+        "h_period": (40, 80, 20),
+        "h_lag": (5, 15, 5),
+        "kf_gain": (0.1, 0.35, 0.1),
+        "atr_len": (7, 14, 3),
+        "atr_base": (1.0, 2.0, 0.5),
+        "atr_hscale": (2.0, 4.0, 1.0)
+    },
     IndicatorType.STOCH_K: {"k_period": (7, 21, 7), "smooth_k": (3, 5, 1)},
     IndicatorType.STOCH_D: {"k_period": (7, 21, 7), "smooth_k": (3, 5, 1), "d_period": (3, 5, 1)},
     IndicatorType.CCI: {"period": (10, 30, 5)},
@@ -368,6 +450,7 @@ INDICATOR_CATEGORIES: dict[str, list[IndicatorType]] = {
         IndicatorType.MACD_HIST,
         IndicatorType.ADX,
         IndicatorType.SUPERTREND,
+        IndicatorType.HURST_SUPERTREND,
     ],
     "momentum": [
         IndicatorType.RSI,

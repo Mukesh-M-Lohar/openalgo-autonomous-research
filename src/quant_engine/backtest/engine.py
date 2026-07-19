@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 
 from quant_engine.backtest.metrics import compute_metrics
@@ -67,19 +68,25 @@ class BacktestEngine:
             if entries.sum() == 0:
                 return None
 
-            trades = self._simulate_trades(
+            trades, bar_equity = self._simulate_trades(
                 df, entries, exits, strategy.exit_long, strategy.forced_exit_time
             )
 
             if not trades:
                 return None
 
+            equity_curve = pd.DataFrame({"equity": bar_equity}, index=df.index)
+
+            # Buy-and-hold benchmark for information ratio (Chan Ch.1 p.41)
+            bh_returns = df["close"].pct_change().fillna(0.0)
+
             return compute_metrics(
                 strategy_id=strategy.id,
                 trades=trades,
-                equity_curve=self._build_equity_curve(trades, df),
+                equity_curve=equity_curve,
                 initial_capital=self._initial_capital,
                 total_bars=len(df),
+                benchmark_returns=bh_returns,
             )
         except Exception as e:
             logger.debug(f"Backtest failed for {strategy.id}: {e}")
@@ -183,8 +190,19 @@ class BacktestEngine:
         exits: pd.Series,
         exit_rule: ExitRule,
         forced_exit_time: str | None,
-    ) -> list[dict]:
-        """Simulate trades with stop-loss, take-profit, trailing stop, and time exit."""
+    ) -> tuple[list[dict], np.ndarray]:
+        """Simulate trades with stop-loss, take-profit, trailing stop, and time exit.
+
+        Returns:
+            Tuple of (trades list, bar-by-bar equity array).
+
+        Look-ahead bias prevention (Chan Ch.1 p.22):
+            Signal at bar i -> entry at open[i+1].
+        Bar-by-bar equity (Chan Ch.1 pp.34-40):
+            Mark-to-market at every bar for accurate Sharpe/drawdown.
+        """
+
+        n = len(df)
         trades = []
         position_open = False
         entry_price = 0.0
@@ -195,9 +213,19 @@ class BacktestEngine:
         close = df["close"].values
         high = df["high"].values
         low = df["low"].values
+        open_ = df["open"].values
         index = df.index
 
-        for i in range(1, len(df)):
+        # Bar-by-bar equity tracking (Chan Ch.1 pp.34-40)
+        capital = self._initial_capital
+        bar_equity = np.full(n, self._initial_capital, dtype=np.float64)
+        position_size = 0.0  # number of "units" held (capital / entry_price)
+
+        # Pre-compute round-trip cost percentages
+        commission_rt = self._cost.commission_pct * 2
+        slippage_rt = self._cost.slippage_pct * 2
+
+        for i in range(1, n):
             if position_open:
                 bars_held += 1
                 current_high = high[i]
@@ -224,7 +252,9 @@ class BacktestEngine:
 
                 # Check trailing stop
                 if exit_price is None and exit_rule.trailing_stop_pct is not None:
-                    trail_price = max_price_since_entry * (1 - exit_rule.trailing_stop_pct / 100)
+                    trail_price = max_price_since_entry * (
+                        1 - exit_rule.trailing_stop_pct / 100
+                    )
                     if current_low <= trail_price:
                         exit_price = trail_price
                         exit_reason = "trailing_stop"
@@ -252,10 +282,9 @@ class BacktestEngine:
                     exit_reason = "signal"
 
                 if exit_price is not None:
+                    # Close trade
                     pnl_pct = (exit_price - entry_price) / entry_price * 100
-                    commission = self._cost.commission_pct * 2
-                    slippage = self._cost.slippage_pct * 2
-                    net_pnl_pct = pnl_pct - commission - slippage
+                    net_pnl_pct = pnl_pct - commission_rt - slippage_rt
 
                     trades.append(
                         {
@@ -268,42 +297,51 @@ class BacktestEngine:
                             "exit_reason": exit_reason,
                         }
                     )
+                    # Update capital with realized PnL
+                    capital = capital * (1 + net_pnl_pct / 100)
                     position_open = False
+                    position_size = 0.0
+                    bar_equity[i] = capital
+                else:
+                    # Still in trade: mark-to-market using current close
+                    unrealized_pnl_pct = (current_close - entry_price) / entry_price
+                    bar_equity[i] = capital * (1 + unrealized_pnl_pct)
 
-            elif entries.iloc[i] and not position_open:
-                entry_price = close[i]
-                entry_bar = i
-                max_price_since_entry = high[i]
-                bars_held = 0
-                position_open = True
+            else:
+                # No position — check for entry signal
+                # Look-ahead bias fix (Chan Ch.1 p.22):
+                # Signal at bar i -> entry at open[i+1]
+                # We check signal at bar i-1 and enter at open[i]
+                if i >= 2 and entries.iloc[i - 1] and not position_open:
+                    entry_price = open_[i]
+                    entry_bar = i
+                    max_price_since_entry = high[i]
+                    bars_held = 0
+                    position_open = True
+                    position_size = capital / entry_price
+                    # Mark-to-market at this bar's close
+                    unrealized_pnl_pct = (close[i] - entry_price) / entry_price
+                    bar_equity[i] = capital * (1 + unrealized_pnl_pct)
+                else:
+                    bar_equity[i] = capital
 
         # Close any open position at end
         if position_open:
             exit_price = close[-1]
             pnl_pct = (exit_price - entry_price) / entry_price * 100
-            commission = self._cost.commission_pct * 2
-            slippage = self._cost.slippage_pct * 2
+            net_pnl_pct = pnl_pct - commission_rt - slippage_rt
             trades.append(
                 {
                     "entry_time": index[entry_bar],
                     "exit_time": index[-1],
                     "entry_price": entry_price,
                     "exit_price": exit_price,
-                    "pnl_pct": pnl_pct - commission - slippage,
+                    "pnl_pct": net_pnl_pct,
                     "bars_held": bars_held,
                     "exit_reason": "end_of_data",
                 }
             )
+            capital = capital * (1 + net_pnl_pct / 100)
+            bar_equity[-1] = capital
 
-        return trades
-
-    def _build_equity_curve(self, trades: list[dict], df: pd.DataFrame) -> pd.DataFrame:
-        """Build cumulative equity curve from trades."""
-        equity = pd.Series(self._initial_capital, index=df.index)
-        capital = self._initial_capital
-        for trade in trades:
-            pnl = capital * (trade["pnl_pct"] / 100)
-            capital += pnl
-            if trade["exit_time"] in equity.index:
-                equity.loc[trade["exit_time"] :] = capital
-        return pd.DataFrame({"equity": equity})
+        return trades, bar_equity
