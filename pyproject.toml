@@ -73,6 +73,7 @@ venv = ".venv"
 pythonPath = ".venv/bin/python3.12"
 pythonVersion = "3.12"
 extraPaths = [
+    ".",
     "src",
     "scripts",
     "scripts/supertrend_scanner",

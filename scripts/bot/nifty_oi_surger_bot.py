@@ -177,8 +177,10 @@ class NiftyOISurgerBot:
         ce_symbols = []
         pe_symbols = []
         for item in chain_data.get("chain", []):
-            ce = item.get("ce") or {}
-            pe = item.get("pe") or {}
+            if not isinstance(item, dict):
+                continue
+            ce = item.get("ce") if isinstance(item.get("ce"), dict) else {}
+            pe = item.get("pe") if isinstance(item.get("pe"), dict) else {}
             if ce.get("symbol"):
                 ce_symbols.append(ce["symbol"])
             if pe.get("symbol"):
@@ -326,7 +328,9 @@ class NiftyOISurgerBot:
             if isinstance(p_resp, dict) and p_resp.get("status") == "success":
                 positions = p_resp.get("data", [])
                 for pos in positions:
-                    symbol = pos.get("symbol", "")
+                    if not isinstance(pos, dict):
+                        continue
+                    symbol = str(pos.get("symbol", ""))
                     qty = int(pos.get("quantity", 0))
                     # Check if we have an active (non-zero) position in a NIFTY weekly option
                     if symbol.startswith(SYMBOL) and qty != 0:
@@ -392,8 +396,10 @@ class NiftyOISurgerBot:
             # Filter trades matching NIFTY options and MIS product
             option_trades = []
             for t in trades:
-                symbol = t.get("symbol", "")
-                product = t.get("product", "")
+                if not isinstance(t, dict):
+                    continue
+                symbol = str(t.get("symbol", ""))
+                product = str(t.get("product", ""))
                 if symbol.startswith(SYMBOL) and product == PRODUCT:
                     option_trades.append(t)
 
@@ -475,10 +481,12 @@ class NiftyOISurgerBot:
         try:
             r = self.client.quotes(symbol="INDIA VIX", exchange="NSE_INDEX")
             if isinstance(r, dict) and r.get("status") == "success":
-                return float(r.get("data", {}).get("ltp", 15.0))
+                data = r.get("data") if isinstance(r.get("data"), dict) else {}
+                return float(data.get("ltp", 15.0))
             r = self.client.quotes(symbol="INDIA VIX", exchange="NSE")
             if isinstance(r, dict) and r.get("status") == "success":
-                return float(r.get("data", {}).get("ltp", 15.0))
+                data = r.get("data") if isinstance(r.get("data"), dict) else {}
+                return float(data.get("ltp", 15.0))
         except Exception as e:
             logger.warning(f"Failed to fetch India VIX: {e}. Defaulting to VIX=15.0")
         return 15.0
@@ -878,16 +886,18 @@ class NiftyOISurgerBot:
             logger.warning(f"Failed to fetch option chain: {chain_data}")
             return
 
-        spot = chain_data.get("underlying_ltp", 0.0)
-        atm_strike = chain_data.get("atm_strike", 0.0)
-        expiry = chain_data.get("expiry_date", "")
+        spot = float(chain_data.get("underlying_ltp", 0.0) or 0.0)
+        atm_strike = int(float(chain_data.get("atm_strike", 0.0) or 0.0))
+        expiry = str(chain_data.get("expiry_date", ""))
 
         # Compute total CE and PE OI and volumes across the chain
         ce_oi, pe_oi = 0.0, 0.0
         volume_ce, volume_pe = 0.0, 0.0
         for item in chain_data.get("chain", []):
-            ce = item.get("ce") or {}
-            pe = item.get("pe") or {}
+            if not isinstance(item, dict):
+                continue
+            ce = item.get("ce") if isinstance(item.get("ce"), dict) else {}
+            pe = item.get("pe") if isinstance(item.get("pe"), dict) else {}
             ce_oi += ce.get("oi", 0.0)
             pe_oi += pe.get("oi", 0.0)
             volume_ce += ce.get("volume", 0.0)
@@ -1020,7 +1030,8 @@ class NiftyOISurgerBot:
         try:
             q = self.client.quotes(symbol=symbol, exchange=OPTIONS_EXCHANGE)
             if isinstance(q, dict) and q.get("status") == "success":
-                exit_price = float(q.get("data", {}).get("ltp", entry_price))
+                data = q.get("data") if isinstance(q.get("data"), dict) else {}
+                exit_price = float(data.get("ltp", entry_price))
         except Exception as e:
             logger.warning(f"Could not fetch exit quote for {symbol}: {e}")
 
@@ -1094,6 +1105,8 @@ class NiftyOISurgerBot:
             elif trend_pe == "Uptrend":
                 pe_surge = True
 
+        if not self.position or not isinstance(self.position, dict):
+            return False
         held_side = self.position["option_type"]
         # Reversal triggers if market writes on the held side (headwind)
         if held_side == "CE" and ce_surge:
@@ -1127,7 +1140,8 @@ class NiftyOISurgerBot:
         try:
             q = self.client.quotes(symbol=symbol, exchange=OPTIONS_EXCHANGE)
             if isinstance(q, dict) and q.get("status") == "success":
-                ltp = float(q.get("data", {}).get("ltp", 0.0))
+                data = q.get("data") if isinstance(q.get("data"), dict) else {}
+                ltp = float(data.get("ltp", 0.0))
             else:
                 logger.warning(f"Could not get LTP quote: {q}")
                 return
