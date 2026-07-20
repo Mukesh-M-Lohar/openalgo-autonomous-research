@@ -70,5 +70,12 @@ testpaths = ["tests"]
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-extraPaths = ["src", "scripts", "scripts/supertrend_scanner", "scripts/bot"]
+pythonPath = ".venv/bin/python3.12"
 pythonVersion = "3.12"
+extraPaths = [
+    "src",
+    "scripts",
+    "scripts/supertrend_scanner",
+    "scripts/bot",
+    ".venv/lib/python3.12/site-packages",
+]
