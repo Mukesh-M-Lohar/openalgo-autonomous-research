@@ -175,16 +175,16 @@ def _compute_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 
 
 def _compute_hurst_supertrend(df: pd.DataFrame, h_period: int = 60, h_lag: int = 10, kf_gain: float = 0.2, atr_len: int = 10, atr_base: float = 1.5, atr_hscale: float = 3.0) -> pd.Series:
     close = df["close"]
-    
+
     var1 = (close - close.shift(1)).rolling(h_period).var()
     varq = (close - close.shift(h_lag)).rolling(h_period).var()
-    
+
     H_raw = np.log(varq / np.maximum(var1, 1e-10)) / (2.0 * np.log(h_lag))
     H = np.maximum(0.0, np.minimum(H_raw, 1.0))
     safeH = H.fillna(0.5)
 
     adaptive_gain = np.maximum(np.minimum(kf_gain * (0.5 + safeH), 0.99), 0.01)
-    
+
     kf = np.zeros(len(close))
     if len(close) > 0:
         kf[0] = close.iloc[0] if not np.isnan(close.iloc[0]) else 0.0

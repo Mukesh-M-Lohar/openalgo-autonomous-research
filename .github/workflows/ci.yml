@@ -51,13 +51,15 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]" || pip install numpy pandas pydantic pydantic-settings pyyaml fastapi uvicorn typer jinja2 httpx pytest pytest-cov
+          pip install -e ".[dev]" || pip install numpy pandas pydantic pydantic-settings pyyaml fastapi uvicorn typer jinja2 httpx pytest pytest-cov openalgo pandas-ta
+        env:
+          PYTHONPATH: .:src:scripts
 
       - name: Run unit tests
         run: |
           python -m pytest tests/ -v --tb=short --cov=src/quant_engine --cov-report=xml --cov-report=term-missing
         env:
-          PYTHONPATH: src
+          PYTHONPATH: .:src:scripts
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
@@ -80,13 +82,15 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install numpy pandas pydantic pydantic-settings pyyaml fastapi uvicorn typer jinja2 httpx pytest
+          pip install numpy pandas pydantic pydantic-settings pyyaml fastapi uvicorn typer jinja2 httpx pytest openalgo pandas-ta
+        env:
+          PYTHONPATH: .:src:scripts
 
       - name: Run integration test
         run: |
           python -m pytest tests/test_pipeline/ -v --tb=long
         env:
-          PYTHONPATH: src
+          PYTHONPATH: .:src:scripts
 
   api-test:
     name: API Smoke Test
@@ -102,7 +106,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install numpy pandas pydantic pydantic-settings pyyaml fastapi uvicorn typer jinja2 httpx pytest httpx
+          pip install numpy pandas pydantic pydantic-settings pyyaml fastapi uvicorn typer jinja2 httpx pytest openalgo pandas-ta
 
       - name: Start API server and test
         run: |

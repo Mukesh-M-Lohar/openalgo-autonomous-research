@@ -9,7 +9,7 @@ import pandas as pd
 
 from quant_engine.backtest.engine import BacktestEngine
 from quant_engine.config import ResearchConfig
-from quant_engine.data.analyzer import RegimeAnalyzer, RegimeAnalysis, MarketRegime
+from quant_engine.data.analyzer import MarketRegime, RegimeAnalysis, RegimeAnalyzer
 from quant_engine.data.client import OpenAlgoClient
 from quant_engine.data.preprocessor import DataPreprocessor
 from quant_engine.evolution.fitness import weighted_fitness
@@ -81,7 +81,7 @@ class PipelineOrchestrator:
             logger.info("Analyzing market regime...")
             analyzer = RegimeAnalyzer()
             regime_analysis = analyzer.analyze(train_df)
-            
+
             if regime_analysis.regime == MarketRegime.RANDOM_WALK:
                 logger.warning(
                     f"Asset appears to be a random walk (Hurst={regime_analysis.hurst_exponent:.4f}). "
@@ -177,25 +177,27 @@ class PipelineOrchestrator:
         finally:
             client.close()
 
-    def _generate(self, run_id: str, regime_analysis: RegimeAnalysis | None = None) -> list[StrategyGenome]:
+    def _generate(
+        self, run_id: str, regime_analysis: RegimeAnalysis | None = None
+    ) -> list[StrategyGenome]:
         """Stage 2: Generate candidate strategies."""
         logger.info("Stage 2: Generating strategies...")
         progress = self._progress.start_stage("generation", self._config.generation.target_count)
 
         generator = StrategyGenerator(self._config, regime_analysis)
-        
+
         strategies = []
         for batch in generator.generate_batch(self._config.execution.chunk_size):
             if self._stop_requested:
                 break
             strategies.extend(batch)
             progress.completed = len(strategies)
-            
+
         progress.passed = len(strategies)
-            
+
         # Optional: Log the unique count
         logger.info(f"Generated {generator.unique_count} unique strategies")
-        
+
         if self._config.output.save_all_candidates:
             summaries = [
                 {"id": s.id, "style": s.trading_style.value, "fingerprint": s.fingerprint()}

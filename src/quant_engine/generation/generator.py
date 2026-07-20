@@ -7,7 +7,7 @@ import random
 from typing import Iterator
 
 from quant_engine.config import ResearchConfig, StyleOverride
-from quant_engine.data.analyzer import RegimeAnalysis, MarketRegime
+from quant_engine.data.analyzer import MarketRegime, RegimeAnalysis
 from quant_engine.generation.grammar import GrammarConfig, generate_strategy
 from quant_engine.generation.indicators import INDICATOR_CATEGORIES
 from quant_engine.models.strategy import (
@@ -94,15 +94,17 @@ class StrategyGenerator:
         # Regime-based adaptation
         indicator_categories = gen_cfg.indicator_categories
         max_hold_bars = style_override.max_hold_bars
-        
+
         if self._regime_analysis:
             if self._regime_analysis.regime == MarketRegime.TRENDING:
                 indicator_categories = ["trend", "momentum"]
             elif self._regime_analysis.regime == MarketRegime.MEAN_REVERTING:
                 indicator_categories = ["oscillator", "volatility", "volume"]
                 # Constrain holding period by half-life for mean-reverting strategies (Chan Ch.2)
-                if self._regime_analysis.half_life_bars < float('inf'):
-                    hl_bars = int(self._regime_analysis.half_life_bars * 1.5)  # give some breathing room
+                if self._regime_analysis.half_life_bars < float("inf"):
+                    hl_bars = int(
+                        self._regime_analysis.half_life_bars * 1.5
+                    )  # give some breathing room
                     if max_hold_bars is None or hl_bars < max_hold_bars:
                         max_hold_bars = max(2, hl_bars)
 
