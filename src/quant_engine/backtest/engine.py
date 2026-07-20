@@ -252,9 +252,7 @@ class BacktestEngine:
 
                 # Check trailing stop
                 if exit_price is None and exit_rule.trailing_stop_pct is not None:
-                    trail_price = max_price_since_entry * (
-                        1 - exit_rule.trailing_stop_pct / 100
-                    )
+                    trail_price = max_price_since_entry * (1 - exit_rule.trailing_stop_pct / 100)
                     if current_low <= trail_price:
                         exit_price = trail_price
                         exit_reason = "trailing_stop"

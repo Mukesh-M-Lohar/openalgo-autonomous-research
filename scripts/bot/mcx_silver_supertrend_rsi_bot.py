@@ -20,7 +20,8 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime, timezone, timedelta, time as dt_time
+from datetime import datetime, timedelta, timezone
+from datetime import time as dt_time
 from typing import Optional, Tuple
 
 import numpy as np
@@ -84,9 +85,7 @@ SESSION_END = os.getenv("SESSION_END", "23:30")
 
 # --- WhatsApp / Telegram alerts ---
 WHATSAPP_PHONES: list[str] = [
-    n.strip()
-    for n in os.getenv("WHATSAPP_PHONES", "").split(",")
-    if n.strip()
+    n.strip() for n in os.getenv("WHATSAPP_PHONES", "").split(",") if n.strip()
 ]
 WHATSAPP_NOTIFY_SELF = os.getenv("WHATSAPP_NOTIFY_SELF", "True").lower() == "true"
 
@@ -95,9 +94,11 @@ WHATSAPP_NOTIFY_SELF = os.getenv("WHATSAPP_NOTIFY_SELF", "True").lower() == "tru
 # ==============================================================================
 IST = timezone(timedelta(hours=5, minutes=30))
 
+
 def get_now_ist() -> datetime:
     """Returns the current date and time localized in Indian Standard Time (IST)."""
     return datetime.now(timezone.utc).astimezone(IST)
+
 
 def is_in_session() -> bool:
     """Checks if the current Indian time is within standard trading session."""
@@ -113,18 +114,22 @@ def is_in_session() -> bool:
         logger.error(f"Error parsing session times: {e}")
         return True
 
+
 # ==============================================================================
 # TECHNICAL INDICATOR MATHEMATICS (Identical to Pine Script Formulas)
 # ==============================================================================
 
+
 def compute_sma(series: pd.Series, period: int) -> pd.Series:
     return series.rolling(period).mean()
+
 
 def compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     d = series.diff()
     g = d.clip(lower=0).ewm(com=period - 1, min_periods=period).mean()
     losses = (-d.clip(upper=0)).ewm(com=period - 1, min_periods=period).mean()
     return 100 - 100 / (1 + g / losses.replace(0, np.nan))
+
 
 def compute_atr(df: pd.DataFrame, period: int = 14, change_atr: bool = True) -> pd.Series:
     hl = df["high"] - df["low"]
@@ -138,7 +143,10 @@ def compute_atr(df: pd.DataFrame, period: int = 14, change_atr: bool = True) -> 
         # Simple Moving Average smoothing
         return tr.rolling(period).mean()
 
-def compute_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.5, change_atr: bool = True) -> Tuple[pd.Series, pd.Series]:
+
+def compute_supertrend(
+    df: pd.DataFrame, period: int = 10, multiplier: float = 3.5, change_atr: bool = True
+) -> Tuple[pd.Series, pd.Series]:
     """
     Computes Supertrend.
     Returns (supertrend_value_series, direction_series)
@@ -146,119 +154,129 @@ def compute_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3
     """
     hl2 = (df["high"] + df["low"]) / 2
     atr = compute_atr(df, period, change_atr)
-    
+
     up_raw = hl2 - multiplier * atr
     dn_raw = hl2 + multiplier * atr
-    
+
     up = pd.Series(0.0, index=df.index)
     dn = pd.Series(0.0, index=df.index)
     trend = pd.Series(1, index=df.index)
-    
+
     for i in range(len(df)):
         if i == 0:
             up.iloc[i] = up_raw.iloc[i]
             dn.iloc[i] = dn_raw.iloc[i]
             trend.iloc[i] = 1
             continue
-            
-        close_prev = df["close"].iloc[i-1]
-        up_prev = up.iloc[i-1]
-        dn_prev = dn.iloc[i-1]
-        trend_prev = trend.iloc[i-1]
-        
+
+        close_prev = df["close"].iloc[i - 1]
+        up_prev = up.iloc[i - 1]
+        dn_prev = dn.iloc[i - 1]
+        trend_prev = trend.iloc[i - 1]
+
         # up band update
         if close_prev > up_prev:
             up.iloc[i] = max(up_raw.iloc[i], up_prev)
         else:
             up.iloc[i] = up_raw.iloc[i]
-            
+
         # dn band update
         if close_prev < dn_prev:
             dn.iloc[i] = min(dn_raw.iloc[i], dn_prev)
         else:
             dn.iloc[i] = dn_raw.iloc[i]
-            
+
         # trend update
-        if trend_prev == -1 and df["close"].iloc[i] > dn.iloc[i-1]:
+        if trend_prev == -1 and df["close"].iloc[i] > dn.iloc[i - 1]:
             trend.iloc[i] = 1
-        elif trend_prev == 1 and df["close"].iloc[i] < up.iloc[i-1]:
+        elif trend_prev == 1 and df["close"].iloc[i] < up.iloc[i - 1]:
             trend.iloc[i] = -1
         else:
             trend.iloc[i] = trend_prev
-            
+
     active_st = pd.Series(np.nan, index=df.index)
     for i in range(len(df)):
         active_st.iloc[i] = up.iloc[i] if trend.iloc[i] == 1 else dn.iloc[i]
-        
+
     return active_st, trend
+
 
 # ==============================================================================
 # SIGNAL CALCULATIONS
 # ==============================================================================
 
+
 def compute_signals(df: pd.DataFrame) -> dict:
     """Computes technical indicators and entry/exit signals from OHLCV data."""
     min_bars = max(ST_ATR_LEN, RSI_LEN, RSI_SMA_LEN) + 5
     if len(df) < min_bars:
-        return {"buy": False, "sell": False, "long_exit": False, "short_exit": False, "indicators": {}}
-        
+        return {
+            "buy": False,
+            "sell": False,
+            "long_exit": False,
+            "short_exit": False,
+            "indicators": {},
+        }
+
     # Standard indicators
     supertrend, trend = compute_supertrend(df, ST_ATR_LEN, ST_MULT, CHANGE_ATR)
     rsi = compute_rsi(df["close"], RSI_LEN)
     rsi_sma = compute_sma(rsi, RSI_SMA_LEN)
-    
+
     # previous closed bar calculations [-2] for entry signals
     trend_prev = trend.iloc[-2]
     rsi_prev = rsi.iloc[-2]
     rsi_sma_prev = rsi_sma.iloc[-2]
     rsi_prev2 = rsi.iloc[-3]
-    
+
     rsi_cooldown_prev = rsi_prev < rsi_prev2
-    
+
     buy_condition_prev = (
-        trend_prev == 1 and
-        rsi_prev < rsi_sma_prev and
-        rsi_cooldown_prev and
-        rsi_prev < RSI_OVERBOUGHT
+        trend_prev == 1
+        and rsi_prev < rsi_sma_prev
+        and rsi_cooldown_prev
+        and rsi_prev < RSI_OVERBOUGHT
     )
-    
+
     sell_condition_prev = (
-        trend_prev == -1 and
-        rsi_prev > rsi_sma_prev and
-        rsi_cooldown_prev and
-        rsi_prev > RSI_OVERSOLD
+        trend_prev == -1
+        and rsi_prev > rsi_sma_prev
+        and rsi_cooldown_prev
+        and rsi_prev > RSI_OVERSOLD
     )
-    
+
     # current bar calculations [-1] for exit signals
     trend_curr = trend.iloc[-1]
     rsi_curr = rsi.iloc[-1]
-    
+
     long_exit = (trend_curr == -1) or (rsi_curr >= RSI_OVERBOUGHT)
     short_exit = (trend_curr == 1) or (rsi_curr <= RSI_OVERSOLD)
-    
+
     indicators = {
         "rsi": rsi_curr,
         "rsi_sma": rsi_sma.iloc[-1],
         "st_value": supertrend.iloc[-1],
-        "st_trend": trend_curr
+        "st_trend": trend_curr,
     }
-    
+
     return {
         "buy": bool(buy_condition_prev),
         "sell": bool(sell_condition_prev),
         "long_exit": bool(long_exit),
         "short_exit": bool(short_exit),
-        "indicators": indicators
+        "indicators": indicators,
     }
+
 
 # ==============================================================================
 # STRATEGY BOT ENGINE
 # ==============================================================================
 
+
 class MCXSupertrendRSIBot:
     def __init__(self):
         self.client = api(api_key=API_KEY, host=API_HOST, ws_url=WS_URL)
-        
+
         # Position states
         self.position: Optional[str] = None  # "BUY", "SELL", or None
         self.entry_price = 0.0
@@ -267,14 +285,14 @@ class MCXSupertrendRSIBot:
         self.running = True
         self.stop_event = threading.Event()
         self.instrument = [{"exchange": EXCHANGE, "symbol": SYMBOL}]
-        
+
         self.daily_trade_taken = False
         self.last_trade_date = None
-        
+
         # Historical Caching
         self._cache_df = None
         self._cache_last_fetched = 0.0
-        
+
         logger.info(
             f"[{STRATEGY_NAME}] Initialized. Trading Symbol: {SYMBOL} on {EXCHANGE} "
             f"| Quantity: {QUANTITY} | Product: {PRODUCT}"
@@ -306,13 +324,15 @@ class MCXSupertrendRSIBot:
         try:
             cache_expiry = 30 if "1m" in CANDLE_TIMEFRAME else 300
             current_time = time.time()
-            if self._cache_df is not None and (current_time - self._cache_last_fetched < cache_expiry):
+            if self._cache_df is not None and (
+                current_time - self._cache_last_fetched < cache_expiry
+            ):
                 return self._cache_df.copy()
 
             end = datetime.now()
             start = end - timedelta(days=LOOKBACK_DAYS)
             source = "db" if EXCHANGE.endswith("_INDEX") else "api"
-            
+
             result = self.client.history(
                 symbol=SYMBOL,
                 exchange=EXCHANGE,
@@ -321,7 +341,7 @@ class MCXSupertrendRSIBot:
                 end_date=end.strftime("%Y-%m-%d"),
                 source=source,
             )
-            
+
             if isinstance(result, pd.DataFrame) and not result.empty:
                 df = result.reset_index()
                 for col in ["open", "high", "low", "close", "volume"]:
@@ -330,7 +350,7 @@ class MCXSupertrendRSIBot:
                 self._cache_df = df.copy()
                 self._cache_last_fetched = current_time
                 return df
-                
+
             if isinstance(result, dict):
                 logger.warning(f"History API response warning: {result.get('message', result)}")
             return pd.DataFrame()
@@ -358,12 +378,16 @@ class MCXSupertrendRSIBot:
                 available = float(r.get("data", {}).get("availablecash", 0.0))
                 price = self._get_price_estimate()
                 cost = price * QUANTITY
-                logger.info(f"Funds Check | Cash Available: {available:.2f} | Est. Order Cost: {cost:.2f}")
+                logger.info(
+                    f"Funds Check | Cash Available: {available:.2f} | Est. Order Cost: {cost:.2f}"
+                )
                 if available < cost:
-                    logger.warning(f"Insufficient funds: needs {cost:.2f}, only have {available:.2f}")
+                    logger.warning(
+                        f"Insufficient funds: needs {cost:.2f}, only have {available:.2f}"
+                    )
                     return False
                 return True
-            logger.warning(f"Funds API did not return success. Proceeding order execution.")
+            logger.warning("Funds API did not return success. Proceeding order execution.")
             return True
         except Exception as e:
             logger.error(f"Error checking funds: {e}")
@@ -390,11 +414,13 @@ class MCXSupertrendRSIBot:
                 r = self.client.whatsapp(msg)
             else:
                 return
-                
+
             if isinstance(r, dict) and r.get("status") != "success":
                 logger.warning(f"WhatsApp Notification API response warning: {r.get('message', r)}")
             else:
-                logger.info(f"WhatsApp notification sent successfully. Message Time: {now_ist.strftime('%H:%M:%S IST')}")
+                logger.info(
+                    f"WhatsApp notification sent successfully. Message Time: {now_ist.strftime('%H:%M:%S IST')}"
+                )
         except Exception as e:
             logger.error(f"Failed to send alert notification: {e}")
 
@@ -416,17 +442,19 @@ class MCXSupertrendRSIBot:
         if resp.get("status") == "success":
             self.position = action
             self.entry_price = self._get_price_estimate()
-            
+
             # Setup fixed stop loss price
             if action == "BUY":
                 self.sl_price = self.entry_price - FIXED_SL
             else:
                 self.sl_price = self.entry_price + FIXED_SL
-                
+
             self.daily_trade_taken = True
             self.last_trade_date = get_now_ist().date()
-            
-            logger.info(f"Entry {action} Order Successful @ {self.entry_price:.2f} | Stop Loss: {self.sl_price:.2f}")
+
+            logger.info(
+                f"Entry {action} Order Successful @ {self.entry_price:.2f} | Stop Loss: {self.sl_price:.2f}"
+            )
             self.notify(action, "ENTRY SUCCESS", self.entry_price, f"SL: {self.sl_price:.2f}")
         else:
             logger.error(f"Entry order failed: {resp}")
@@ -435,7 +463,7 @@ class MCXSupertrendRSIBot:
     def place_exit_order(self, reason: str):
         exit_action = "SELL" if self.position == "BUY" else "BUY"
         logger.info(f"Placing exit order [{reason}] via {exit_action} for {QUANTITY} shares...")
-        
+
         resp = self.client.placeorder(
             strategy=STRATEGY_NAME,
             symbol=SYMBOL,
@@ -449,7 +477,7 @@ class MCXSupertrendRSIBot:
             exit_price = self._get_price_estimate()
             logger.info(f"Exit Successful @ {exit_price:.2f}. Reason: {reason}")
             self.notify(exit_action, f"EXIT SUCCESS ({reason})", exit_price)
-            
+
             # Reset values
             self.position = None
             self.entry_price = 0.0
@@ -462,21 +490,21 @@ class MCXSupertrendRSIBot:
     def check_signals(self):
         now_ist = get_now_ist()
         current_date = now_ist.date()
-        
+
         if self.last_trade_date != current_date:
             self.daily_trade_taken = False
-            
+
         in_sess = is_in_session()
-        
+
         if self.position is not None:
             # Monitor active trades using current LTP
             current_price = self.ltp if self.ltp is not None else 0.0
             if current_price <= 0.0:
                 return
-                
+
             exit_triggered = False
             exit_reason = ""
-            
+
             # 1. Stop Loss check
             if self.position == "BUY" and current_price <= self.sl_price:
                 logger.info(f"Stop Loss hit ({current_price:.2f} <= {self.sl_price:.2f})")
@@ -486,14 +514,14 @@ class MCXSupertrendRSIBot:
                 logger.info(f"Stop Loss hit ({current_price:.2f} >= {self.sl_price:.2f})")
                 exit_triggered = True
                 exit_reason = "SL"
-                
+
             # 2. Exit condition check
             if not exit_triggered:
                 df = self.get_historical_data()
                 if not df.empty:
                     if self.ltp is not None:
                         df.loc[df.index[-1], "close"] = self.ltp
-                    
+
                     signal_res = compute_signals(df)
                     if self.position == "BUY" and signal_res["long_exit"]:
                         logger.info("Long Exit condition met.")
@@ -503,17 +531,17 @@ class MCXSupertrendRSIBot:
                         logger.info("Short Exit condition met.")
                         exit_triggered = True
                         exit_reason = "EXIT SIGNAL"
-                        
+
             if exit_triggered:
                 self.place_exit_order(exit_reason)
-                
+
         else:
             # Check for entries only when in session and daily trade limit isn't reached
             if in_sess and not self.daily_trade_taken:
                 df = self.get_historical_data()
                 if df.empty:
                     return
-                    
+
                 # Update last row with real-time LTP
                 if self.ltp is not None:
                     df.loc[df.index[-1], "close"] = self.ltp
@@ -521,9 +549,9 @@ class MCXSupertrendRSIBot:
                         df.loc[df.index[-1], "high"] = self.ltp
                     if self.ltp < df.loc[df.index[-1], "low"]:
                         df.loc[df.index[-1], "low"] = self.ltp
-                        
+
                 signal_res = compute_signals(df)
-                
+
                 if signal_res["buy"]:
                     logger.info("Signal generated: BUY")
                     self.place_entry_order("BUY")
@@ -536,7 +564,7 @@ class MCXSupertrendRSIBot:
         ws_thread = threading.Thread(target=self._websocket_worker, daemon=True)
         ws_thread.start()
         time.sleep(2)  # Allow WebSocket connection to establish
-        
+
         logger.info("Bot is active and running. Waiting for signals...")
         try:
             while self.running:

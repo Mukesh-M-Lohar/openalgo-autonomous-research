@@ -32,15 +32,15 @@ def mean_reverting_df():
     n = 1000
     prices = np.zeros(n)
     prices[0] = 100.0
-    
+
     # dy = theta * (mu - y) * dt + sigma * dW
     theta = 0.1  # mean reversion speed
-    mu = 100.0   # long term mean
+    mu = 100.0  # long term mean
     sigma = 1.0  # volatility
-    
+
     for i in range(1, n):
-        prices[i] = prices[i-1] + theta * (mu - prices[i-1]) + sigma * np.random.randn()
-        
+        prices[i] = prices[i - 1] + theta * (mu - prices[i - 1]) + sigma * np.random.randn()
+
     return pd.DataFrame({"close": prices})
 
 
@@ -58,17 +58,17 @@ class TestRegimeAnalyzer:
     def test_trending_regime(self, trending_df):
         analyzer = RegimeAnalyzer(hurst_trending_threshold=0.55)
         analysis = analyzer.analyze(trending_df)
-        
+
         # Hurst > 0.55 for trending
         assert analysis.hurst_exponent > 0.55
         assert analysis.regime == MarketRegime.TRENDING
         # Half life should be infinite for trending
-        assert analysis.half_life_bars == float('inf')
+        assert analysis.half_life_bars == float("inf")
 
     def test_mean_reverting_regime(self, mean_reverting_df):
         analyzer = RegimeAnalyzer(hurst_mr_threshold=0.45)
         analysis = analyzer.analyze(mean_reverting_df)
-        
+
         # Hurst < 0.45 for mean reverting
         assert analysis.hurst_exponent < 0.45
         assert analysis.regime == MarketRegime.MEAN_REVERTING
@@ -79,7 +79,7 @@ class TestRegimeAnalyzer:
         # A pure random walk should have Hurst ~ 0.5
         analyzer = RegimeAnalyzer(hurst_trending_threshold=0.55, hurst_mr_threshold=0.45)
         analysis = analyzer.analyze(random_walk_df)
-        
+
         assert 0.45 <= analysis.hurst_exponent <= 0.55
         assert analysis.regime == MarketRegime.RANDOM_WALK
 

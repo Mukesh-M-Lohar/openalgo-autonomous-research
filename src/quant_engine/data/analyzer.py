@@ -41,15 +41,15 @@ class RegimeAnalyzer:
         """Analyze the given dataframe and return market regime parameters."""
         if price_col not in df.columns:
             raise ValueError(f"Column '{price_col}' not found in dataframe.")
-            
+
         prices = df[price_col].values
-        
+
         # Calculate Hurst Exponent
         hurst = self._compute_hurst(prices)
-        
+
         # Calculate Half-Life
         half_life = self._compute_half_life(prices)
-        
+
         # Determine Regime
         if hurst > self._hurst_trending_threshold:
             regime = MarketRegime.TRENDING
@@ -57,12 +57,12 @@ class RegimeAnalyzer:
             regime = MarketRegime.MEAN_REVERTING
         else:
             regime = MarketRegime.RANDOM_WALK
-            
+
         logger.info(
             f"Regime Analysis: Hurst={hurst:.4f}, Half-Life={half_life:.1f} bars "
             f"-> {regime.value.upper()}"
         )
-            
+
         return RegimeAnalysis(
             regime=regime,
             hurst_exponent=hurst,
@@ -71,46 +71,46 @@ class RegimeAnalyzer:
 
     def _compute_hurst(self, prices: np.ndarray, max_lag: int = 100) -> float:
         """Compute the Hurst Exponent using variance of differences method.
-        
+
         H < 0.5: Mean reverting
         H = 0.5: Geometric random walk
         H > 0.5: Trending
         """
         if len(prices) < max_lag + 10:
             max_lag = max(2, len(prices) // 4)
-            
+
         lags = np.arange(2, max_lag)
         # Compute standard deviation of price differences for various lags
         # std(p(t) - p(t-lag)) ~ lag^H
         tau = [np.std(prices[lag:] - prices[:-lag]) for lag in lags]
-        
+
         # Avoid log(0) if data is constant
         if np.any(np.array(tau) == 0):
             return 0.5
-            
+
         # Fit a line to log-log plot to extract H
         poly = np.polyfit(np.log(lags), np.log(tau), 1)
         return float(poly[0])
 
     def _compute_half_life(self, prices: np.ndarray) -> float:
         """Compute the half-life of mean reversion.
-        
+
         Using Ornstein-Uhlenbeck differential equation approximation:
         dy(t) = lambda * y(t-1) + mu
         Half-life = -ln(2) / lambda
         """
         if len(prices) < 3:
-            return float('inf')
-            
+            return float("inf")
+
         y_prev = prices[:-1]
         dy = prices[1:] - y_prev
-        
+
         # Regression dy = lambda * y_prev + mu
         poly = np.polyfit(y_prev, dy, 1)
         lam = poly[0]
-        
+
         # If lambda >= 0, it's not mean-reverting
         if lam >= -1e-8:
-            return float('inf')
-            
+            return float("inf")
+
         return float(-np.log(2) / lam)

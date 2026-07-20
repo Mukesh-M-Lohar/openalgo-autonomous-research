@@ -186,10 +186,12 @@ class TestLookAheadBiasFix:
         n = 100
         dates = pd.date_range("2023-01-01", periods=n, freq="D")
         # EMA(10) crosses above EMA(30): need a trend that starts low then rises
-        prices = np.concatenate([
-            np.linspace(100, 90, 40),   # downtrend
-            np.linspace(90, 120, 60),   # strong uptrend to force crossover
-        ])
+        prices = np.concatenate(
+            [
+                np.linspace(100, 90, 40),  # downtrend
+                np.linspace(90, 120, 60),  # strong uptrend to force crossover
+            ]
+        )
         # Set open different from previous close to test look-ahead
         opens = prices + 0.5  # open always 0.5 above close
         df = pd.DataFrame(
@@ -410,11 +412,13 @@ class TestDrawdownDuration:
     def test_drawdown_duration_in_metrics(self):
         """Verify drawdown duration appears in BacktestResult."""
         # Equity: up, then sustained dip for 30 bars
-        equity = np.concatenate([
-            np.linspace(100000, 110000, 50),
-            np.linspace(110000, 95000, 30),
-            np.linspace(95000, 105000, 20),
-        ])
+        equity = np.concatenate(
+            [
+                np.linspace(100000, 110000, 50),
+                np.linspace(110000, 95000, 30),
+                np.linspace(95000, 105000, 20),
+            ]
+        )
         equity_df = pd.DataFrame({"equity": equity})
         trades = [{"pnl_pct": 1.0, "bars_held": 5}]
         result = compute_metrics("test", trades, equity_df, 100000, 100)
@@ -475,9 +479,7 @@ class TestDeflatedSharpe:
         equity = np.linspace(100000, 120000, 252)
         equity_df = pd.DataFrame({"equity": equity})
         trades = [{"pnl_pct": 2.0, "bars_held": 5} for _ in range(10)]
-        result = compute_metrics(
-            "test", trades, equity_df, 100000, 252, n_strategies_tested=100
-        )
+        result = compute_metrics("test", trades, equity_df, 100000, 252, n_strategies_tested=100)
         assert isinstance(result.deflated_sharpe, float)
 
 
