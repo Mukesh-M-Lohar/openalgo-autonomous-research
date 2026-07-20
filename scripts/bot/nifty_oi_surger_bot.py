@@ -27,7 +27,13 @@ try:
     from openalgo import api
 except ImportError:
     logger.warning("openalgo SDK is not installed. Live trading API features will be disabled.")
-    api = None
+
+    class api:  # noqa: N801 # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __getattr__(self, name: str) -> Any:
+            return lambda *args, **kwargs: {}
 
 # ==============================================================================
 # CONFIGURATION
