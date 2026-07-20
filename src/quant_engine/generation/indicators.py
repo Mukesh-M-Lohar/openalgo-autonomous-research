@@ -231,25 +231,25 @@ def _hurst_supertrend(df: pd.DataFrame, src: pd.Series, params: dict) -> pd.Seri
     atr_hscale = float(params.get("atr_hscale", 3.0))
 
     close = df["close"]
-    
+
     var1 = (close - close.shift(1)).rolling(h_period).var()
     varq = (close - close.shift(h_lag)).rolling(h_period).var()
-    
+
     H_raw = np.log(varq / np.maximum(var1, 1e-10)) / (2.0 * np.log(h_lag))
     H = np.maximum(0.0, np.minimum(H_raw, 1.0))
     safeH = H.fillna(0.5)
 
     adaptive_gain = np.maximum(np.minimum(kf_gain * (0.5 + safeH), 0.99), 0.01)
-    
+
     kf = np.zeros(len(close))
     if len(close) > 0:
         kf[0] = close.iloc[0] if not np.isnan(close.iloc[0]) else 0.0
     for i in range(1, len(close)):
-        if np.isnan(kf[i-1]):
+        if np.isnan(kf[i - 1]):
             kf[i] = close.iloc[i] if not np.isnan(close.iloc[i]) else 0.0
         else:
-            val = close.iloc[i] if not np.isnan(close.iloc[i]) else kf[i-1]
-            kf[i] = kf[i-1] + adaptive_gain.iloc[i] * (val - kf[i-1])
+            val = close.iloc[i] if not np.isnan(close.iloc[i]) else kf[i - 1]
+            kf[i] = kf[i - 1] + adaptive_gain.iloc[i] * (val - kf[i - 1])
     kf_series = pd.Series(kf, index=close.index)
 
     atr = _atr(df, src, {"period": atr_len})
@@ -425,7 +425,7 @@ INDICATOR_PARAM_RANGES: dict[IndicatorType, dict[str, tuple[float, float, float]
         "kf_gain": (0.1, 0.35, 0.1),
         "atr_len": (7, 14, 3),
         "atr_base": (1.0, 2.0, 0.5),
-        "atr_hscale": (2.0, 4.0, 1.0)
+        "atr_hscale": (2.0, 4.0, 1.0),
     },
     IndicatorType.STOCH_K: {"k_period": (7, 21, 7), "smooth_k": (3, 5, 1)},
     IndicatorType.STOCH_D: {"k_period": (7, 21, 7), "smooth_k": (3, 5, 1), "d_period": (3, 5, 1)},

@@ -26,8 +26,8 @@ logger = logging.getLogger("NiftyOISurger")
 try:
     from openalgo import api
 except ImportError:
-    logger.error("Install the SDK first: pip install openalgo")
-    sys.exit(1)
+    logger.warning("openalgo SDK is not installed. Live trading API features will be disabled.")
+    api = None
 
 # ==============================================================================
 # CONFIGURATION
