@@ -103,7 +103,7 @@ def test_actual_orders_and_notifications(client):
     assert "orderid" in order_resp
 
     # 4. Test WhatsApp Notification API
-    wa_resp = client.whatsapp("Hello from options bot unit tests!", to=["919876543210"])
+    wa_resp = client.whatsapp("Hello from options bot unit tests!", to=["919790856795"])
     assert isinstance(wa_resp, dict)
     assert wa_resp.get("status") in ("success", "error")
 

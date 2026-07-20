@@ -1,0 +1,26 @@
+=== TIME OF DAY ANALYSIS ===
+Morning (Before 11 AM):
+  BUY Touches: 16, Hit Rate: 18.8%
+  SELL Touches: 13, Hit Rate: 61.5%
+Mid-day (11 AM to 1:30 PM):
+  BUY Touches: 14, Hit Rate: 42.9%
+  SELL Touches: 9, Hit Rate: 44.4%
+Afternoon (After 1:30 PM):
+  BUY Touches: 10, Hit Rate: 40.0%
+  SELL Touches: 4, Hit Rate: 25.0%
+
+=== BARS TO RESOLUTION ===
+BUY Touches:
+  Successful Bounces: took on avg 2.1 bars (median 2.0 bars) to hit target
+  Failed Bounces (Reversals): took on avg 1.9 bars (median 1.0 bars) to reverse
+SELL Touches:
+  Successful Bounces: took on avg 2.4 bars (median 2.0 bars) to hit target
+  Failed Bounces (Reversals): took on avg 1.4 bars (median 1.0 bars) to reverse
+
+=== DISTANCE TO BAND (TOUCH CLOSENESS) ===
+BUY Touches:
+  Very Close (<0.05% away): 25.0% (N=16)
+  Farther (0.05-0.15% away): 37.5% (N=24)
+SELL Touches:
+  Very Close (<0.05% away): 50.0% (N=4)
+  Farther (0.05-0.15% away): 50.0% (N=22)
