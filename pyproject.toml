@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "OpenAlgo Autonomous Quant Research Engine - Offline systematic strategy discovery, validation, and export"
 authors = [{name = "Mukesh M"}]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=1.26",
     "pandas>=2.1",
@@ -21,8 +21,8 @@ dependencies = [
     "lightgbm>=4.0.0",
     "catboost>=1.2.0",
     "optuna>=3.5.0",
-    "shap>=0.44.0",
     "matplotlib>=3.8.0",
+    "openalgo>=2.0.3",
 ]
 
 [project.optional-dependencies]
@@ -66,3 +66,6 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+extraPaths = ["src", "scripts", "scripts/supertrend_scanner"]

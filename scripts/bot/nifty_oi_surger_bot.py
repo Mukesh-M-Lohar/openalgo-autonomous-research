@@ -195,6 +195,15 @@ class NiftyOISurgerBot:
             source="db",
         )
         if not isinstance(spot_df, pd.DataFrame) or spot_df.empty:
+            spot_df = self.client.history(
+                symbol=SYMBOL,
+                exchange=UNDERLYING_EXCHANGE,
+                interval="1m",
+                start_date=start_date.strftime("%Y-%m-%d"),
+                end_date=today.strftime("%Y-%m-%d"),
+            )
+
+        if not isinstance(spot_df, pd.DataFrame) or spot_df.empty:
             logger.warning("Could not fetch underlying spot history. Warmup aborted.")
             return
 

@@ -6,12 +6,17 @@ trades based on the Hurst Adaptive Supertrend indicator.
 """
 
 import os
-import time
 import threading
+import time
 from datetime import datetime, timedelta
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+from dotenv import load_dotenv
 from openalgo import api
+
+load_dotenv(".env.test")
+
 
 # --- Configuration ---
 API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
@@ -39,31 +44,31 @@ def _compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     tr2 = (high - close.shift(1)).abs()
     tr3 = (low - close.shift(1)).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    return tr.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
 
 def compute_hurst_supertrend(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     """Returns (supertrend, direction)"""
     close = df["close"]
-    
+
     var1 = (close - close.shift(1)).rolling(H_PERIOD).var()
     varq = (close - close.shift(H_LAG)).rolling(H_PERIOD).var()
-    
+
     H_raw = np.log(varq / np.maximum(var1, 1e-10)) / (2.0 * np.log(H_LAG))
     H = np.maximum(0.0, np.minimum(H_raw, 1.0))
     safeH = H.fillna(0.5)
 
     adaptive_gain = np.maximum(np.minimum(KF_GAIN * (0.5 + safeH), 0.99), 0.01)
-    
+
     kf = np.zeros(len(close))
     if len(close) > 0:
         kf[0] = close.iloc[0] if not np.isnan(close.iloc[0]) else 0.0
     for i in range(1, len(close)):
-        if np.isnan(kf[i-1]):
+        if np.isnan(kf[i - 1]):
             kf[i] = close.iloc[i] if not np.isnan(close.iloc[i]) else 0.0
         else:
-            val = close.iloc[i] if not np.isnan(close.iloc[i]) else kf[i-1]
-            kf[i] = kf[i-1] + adaptive_gain.iloc[i] * (val - kf[i-1])
+            val = close.iloc[i] if not np.isnan(close.iloc[i]) else kf[i - 1]
+            kf[i] = kf[i - 1] + adaptive_gain.iloc[i] * (val - kf[i - 1])
     kf_series = pd.Series(kf, index=close.index)
 
     atr = _compute_atr(df, ATR_LEN)
@@ -113,7 +118,7 @@ class HurstBot:
     def __init__(self):
         self.client = api(api_key=API_KEY, host=API_HOST, ws_url=WS_URL)
         self.ltp = 0.0
-        self.position = 0 # 1 for Long, -1 for Short, 0 for None
+        self.position = 0  # 1 for Long, -1 for Short, 0 for None
         self.stop_event = threading.Event()
 
     def on_ltp(self, data):
@@ -122,7 +127,7 @@ class HurstBot:
 
     def fetch_history(self) -> pd.DataFrame:
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=10) # Enough for lookbacks
+        start_date = end_date - timedelta(days=10)  # Enough for lookbacks
         data = self.client.history(
             symbol=SYMBOL,
             exchange=EXCHANGE,
@@ -164,10 +169,10 @@ class HurstBot:
                 df = self.fetch_history()
                 if not df.empty and len(df) > H_PERIOD + H_LAG:
                     st, direction = compute_hurst_supertrend(df)
-                    
+
                     curr_dir = direction.iloc[-1]
                     prev_dir = direction.iloc[-2]
-                    
+
                     # Check for trend flips
                     if curr_dir == 1 and prev_dir == -1:
                         print(f"[SIGNAL] BULLISH trend confirmed for {SYMBOL} at {self.ltp}")
@@ -183,13 +188,13 @@ class HurstBot:
                         print(f"[SIGNAL] BEARISH trend confirmed for {SYMBOL} at {self.ltp}")
                         if self.position == 1:
                             # Close long, then open short
-                            self.place_order("SELL") # close long
-                            self.place_order("SELL") # open short
+                            self.place_order("SELL")  # close long
+                            self.place_order("SELL")  # open short
                         elif self.position == 0:
                             self.place_order("SELL")
                         self.position = -1
 
-                time.sleep(60) # check every minute
+                time.sleep(60)  # check every minute
         except KeyboardInterrupt:
             print("[BOT] Shutting down...")
         finally:
@@ -198,7 +203,9 @@ class HurstBot:
     def start_ws(self):
         try:
             self.client.connect()
-            self.client.subscribe_ltp([{"symbol": SYMBOL, "exchange": EXCHANGE}], on_data_received=self.on_ltp)
+            self.client.subscribe_ltp(
+                [{"symbol": SYMBOL, "exchange": EXCHANGE}], on_data_received=self.on_ltp
+            )
             while not self.stop_event.is_set():
                 time.sleep(1)
         except Exception as e:
