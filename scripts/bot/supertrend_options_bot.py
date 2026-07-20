@@ -9,16 +9,33 @@ This production bot executes live/paper options trading based on Supertrend band
 - Trailing stop-loss protection (10%), index Supertrend direction flip exit, and intraday time filters.
 """
 
+import logging
 import os
+import sys
 import time
 from datetime import datetime, timedelta, timezone
+from datetime import time as dt_time
 
 import pandas as pd
 import pandas_ta as ta
 from dotenv import load_dotenv
-from openalgo import api
+
+# --- SDK Import with guard ---
+try:
+    from openalgo import api
+except ImportError:
+    print("ERROR: Install the SDK first:  pip install openalgo")
+    sys.exit(1)
 
 load_dotenv()
+
+# --- Logging ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger("SupertrendOptionsBot")
 
 # --- Configuration ---
 API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
@@ -31,17 +48,22 @@ TIMEFRAME = os.getenv("TIMEFRAME", "5m")
 ST_PERIOD = int(os.getenv("ST_PERIOD", "10"))
 ST_MULT = float(os.getenv("ST_MULT", "3.0"))
 STRIKE_OFFSET = int(os.getenv("STRIKE_OFFSET", "500"))  # 500 points ITM
+STRIKE_STEP = int(
+    os.getenv("STRIKE_STEP", "100")
+)  # Strike interval (100 for BANKNIFTY, 50 for NIFTY)
 QUANTITY = int(os.getenv("QUANTITY", "30"))
 PRODUCT = os.getenv("PRODUCT", "MIS")
 AVOID_0DTE = os.getenv("AVOID_0DTE", "True").lower() == "true"
+STRATEGY_NAME = "SupertrendOptionsBot"
 
-# Time of Day Filter (IST) - e.g., 11 AM to 2 PM IST
-ALLOWED_START_HOUR = 11
-ALLOWED_END_HOUR = 14
+# Time of Day Filter (IST) — configurable via env
+ALLOWED_START_HOUR = int(os.getenv("ALLOWED_START_HOUR", "11"))
+ALLOWED_END_HOUR = int(os.getenv("ALLOWED_END_HOUR", "14"))
 
 # Exits
-TRAIL_SL_PCT = 10.0  # Trailing stop percentage (None to disable)
-TAKE_PROFIT_PCT = None  # None for letting it ride
+TRAIL_SL_PCT = float(os.getenv("TRAIL_SL_PCT", "10.0"))  # Trailing stop percentage (0 to disable)
+TAKE_PROFIT_PCT = os.getenv("TAKE_PROFIT_PCT", "")  # Empty string or float; empty = disabled
+TAKE_PROFIT_PCT = float(TAKE_PROFIT_PCT) if TAKE_PROFIT_PCT else None
 
 # Cache Lookback Window
 LOOKBACK_BARS = 100  # Number of historical bars to keep in memory
@@ -49,10 +71,28 @@ LOOKBACK_BARS = 100  # Number of historical bars to keep in memory
 # WebSocket Data Feed Toggle
 USE_WEBSOCKET = os.getenv("USE_WEBSOCKET", "true").lower() == "true"
 
+# Daily Trade Limit
+MAX_TRADES_PER_DAY = int(os.getenv("MAX_TRADES_PER_DAY", "3"))
+
+# Re-entry Cooldown (seconds) after an exit
+REENTRY_COOLDOWN_SECONDS = int(os.getenv("REENTRY_COOLDOWN_SECONDS", "300"))
+
+# EOD Square-off time (IST)
+EOD_SQUAREOFF_HOUR = int(os.getenv("EOD_SQUAREOFF_HOUR", "15"))
+EOD_SQUAREOFF_MINUTE = int(os.getenv("EOD_SQUAREOFF_MINUTE", "15"))
+
+# --- IST Timezone ---
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def get_now_ist() -> datetime:
+    """Returns the current date and time localized in Indian Standard Time (IST)."""
+    return datetime.now(timezone.utc).astimezone(IST)
+
 
 class SupertrendOptionsBot:
     def __init__(self):
-        print(f"Initializing Supertrend Options Bot for {UNDERLYING_SYMBOL}...")
+        logger.info(f"Initializing Supertrend Options Bot for {UNDERLYING_SYMBOL}...")
         self.client = api(api_key=API_KEY, host=API_HOST)
         self.history_cache = pd.DataFrame()
         self.active_position = None
@@ -62,35 +102,75 @@ class SupertrendOptionsBot:
         self.entry_price = 0.0
         self.use_websocket = USE_WEBSOCKET
 
+        # Candle-boundary throttle: track last processed bar timestamp
+        self._last_processed_bar_ts = None
+
+        # Daily trade limit tracking
+        self._daily_trade_count = 0
+        self._trade_date = get_now_ist().date()
+
+        # Re-entry cooldown tracking
+        self._last_exit_time = 0.0
+
+        # Instrument cache (loaded once at startup)
+        self._instruments_cache = None
+
         self._prime_cache()
+        self._cache_instruments()
         self._init_websocket()
+
+    def _cache_instruments(self):
+        """Fetch and cache the NFO instrument master once at startup."""
+        logger.info("Fetching NFO instrument master (one-time cache)...")
+        try:
+            instruments = self.client.instruments(exchange="NFO")
+            if isinstance(instruments, pd.DataFrame) and not instruments.empty:
+                self._instruments_cache = instruments
+                logger.info(f"Instrument master cached: {len(self._instruments_cache)} records.")
+            else:
+                logger.warning("Instrument master returned empty. Will retry on first signal.")
+        except Exception as e:
+            logger.error(f"Failed to fetch instrument master: {e}")
 
     def _init_websocket(self):
         """Initialize WebSocket connection and subscribe to underlying index."""
         if not self.use_websocket:
-            print("WebSocket streaming is disabled in configuration (using REST polling).")
+            logger.info("WebSocket streaming is disabled in configuration (using REST polling).")
             return
 
         try:
-            print("Connecting to OpenAlgo WebSocket feed...")
+            logger.info("Connecting to OpenAlgo WebSocket feed...")
             self.client.connect()
-            self.client.subscribe_ltp([{"exchange": EXCHANGE, "symbol": UNDERLYING_SYMBOL}])
-            print(f"✅ WebSocket connected and subscribed to {EXCHANGE}:{UNDERLYING_SYMBOL}")
+            self.client.subscribe_ltp(
+                [{"exchange": EXCHANGE, "symbol": UNDERLYING_SYMBOL}],
+                on_data_received=self._on_ws_price_update,
+            )
+            logger.info(f"✅ WebSocket connected and subscribed to {EXCHANGE}:{UNDERLYING_SYMBOL}")
         except Exception as e:
-            print(f"⚠️ WebSocket initialization failed, falling back to REST: {e}")
+            logger.warning(f"⚠️ WebSocket initialization failed, falling back to REST: {e}")
             self.use_websocket = False
 
+    def _on_ws_price_update(self, data):
+        """Callback for WebSocket LTP updates. Logs at debug level."""
+        logging.debug(f"WS price update: {data}")
+
     def get_live_ltp(self, exchange, symbol):
-        """Fetch live LTP from WebSocket feed if connected; fall back to REST quotes API."""
+        """Fetch live LTP from WebSocket cache if connected; fall back to REST quotes API.
+
+        SDK ref: client.get_ltp() returns cached dict with shape:
+        {"symbol": "...", "data": {"ltp": 23210.50}}
+        """
         if self.use_websocket:
             try:
                 res = self.client.get_ltp(exchange, symbol)
-                ltp_data = res.get("ltp", {}).get(exchange, {}).get(symbol, {})
-                price = float(ltp_data.get("ltp", 0))
-                if price > 0:
-                    return price
+                if isinstance(res, dict):
+                    # Correct SDK shape: res -> {"data": {"ltp": <float>}} or similar
+                    ltp_val = res.get("data", {}).get("ltp", 0)
+                    price = float(ltp_val) if ltp_val else 0.0
+                    if price > 0:
+                        return price
             except Exception as e:
-                print(f"Warning: Failed to fetch WS LTP for {exchange}:{symbol}: {e}")
+                logger.warning(f"Failed to fetch WS LTP for {exchange}:{symbol}: {e}")
 
         # Fallback to REST Quote API
         try:
@@ -99,77 +179,91 @@ class SupertrendOptionsBot:
                 data = q_resp.get("data", {})
                 return float(data.get("ltp", 0))
         except Exception as e:
-            print(f"Warning: REST quote fallback failed for {exchange}:{symbol}: {e}")
+            logger.warning(f"REST quote fallback failed for {exchange}:{symbol}: {e}")
 
         return 0.0
 
+    def _parse_history_df(self, hist):
+        """Parse the history() response into a clean DataFrame.
+
+        SDK ref: history() always returns a pandas.DataFrame with IST-localized
+        DatetimeIndex for intraday intervals. No manual timezone shift needed.
+        """
+        if not isinstance(hist, pd.DataFrame):
+            raise ValueError(f"Unexpected history response type: {type(hist)}")
+
+        if hist.empty:
+            return hist
+
+        df = hist.copy()
+
+        # If the index is already a DatetimeIndex (SDK standard), use it directly.
+        # If the SDK returned columns instead, set the datetime column as index.
+        if not isinstance(df.index, pd.DatetimeIndex):
+            if "datetime" in df.columns:
+                df["datetime"] = pd.to_datetime(df["datetime"])
+                df = df.set_index("datetime")
+            elif "timestamp" in df.columns:
+                df["timestamp"] = pd.to_datetime(df["timestamp"])
+                df = df.set_index("timestamp")
+
+        df = df.sort_index()
+        return df
+
     def _prime_cache(self):
         """Fetch initial history to prime the Supertrend calculation."""
-        print(f"Fetching last {LOOKBACK_BARS} bars of {UNDERLYING_SYMBOL} to prime cache...")
+        logger.info(f"Fetching last {LOOKBACK_BARS} bars of {UNDERLYING_SYMBOL} to prime cache...")
 
         # Calculate start date based on timeframe (generous buffer)
         start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-        hist = self.client.history(
-            symbol=UNDERLYING_SYMBOL,
-            exchange=EXCHANGE,
-            interval=TIMEFRAME,
-            start_date=start_date,
-            end_date=end_date,
-        )
+        try:
+            hist = self.client.history(
+                symbol=UNDERLYING_SYMBOL,
+                exchange=EXCHANGE,
+                interval=TIMEFRAME,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            df = self._parse_history_df(hist)
+        except Exception as e:
+            raise RuntimeError(f"Failed to prime cache: {e}") from e
 
-        if isinstance(hist, dict) and hist.get("status") == "error":
-            raise Exception(f"Failed to prime cache: {hist}")
-
-        df = hist if isinstance(hist, pd.DataFrame) else pd.DataFrame(hist)
-        if "datetime" in df.columns:
-            df["datetime"] = pd.to_datetime(df["datetime"])
-            df = df.set_index("datetime")
-        elif "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
-            df = df.set_index("timestamp")
-
-        df = df.sort_index()
-        if len(df) > 0 and isinstance(df.index, pd.DatetimeIndex) and df.index.min().hour < 7:
-            df.index = df.index + pd.Timedelta(hours=5, minutes=30)
+        if df.empty:
+            raise RuntimeError("History returned empty DataFrame — cannot prime cache.")
 
         # Keep only the latest LOOKBACK_BARS
         self.history_cache = df.tail(LOOKBACK_BARS)
-        print(f"Cache primed with {len(self.history_cache)} bars.")
+        logger.info(f"Cache primed with {len(self.history_cache)} bars.")
 
     def update_cache_and_calc(self):
-        """Fetch the single latest bar, update rolling cache, and calc Supertrend."""
+        """Fetch the latest bars, update rolling cache, and calc Supertrend."""
         start_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
-        hist = self.client.history(
-            symbol=UNDERLYING_SYMBOL,
-            exchange=EXCHANGE,
-            interval=TIMEFRAME,
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-        if isinstance(hist, dict) and hist.get("status") == "error":
-            print(f"Warning: Failed to fetch latest data: {hist}")
+        try:
+            hist = self.client.history(
+                symbol=UNDERLYING_SYMBOL,
+                exchange=EXCHANGE,
+                interval=TIMEFRAME,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            df = self._parse_history_df(hist)
+        except Exception as e:
+            logger.warning(f"Failed to fetch latest data: {e}")
             return None, None
 
-        df = hist if isinstance(hist, pd.DataFrame) else pd.DataFrame(hist)
-        if "datetime" in df.columns:
-            df["datetime"] = pd.to_datetime(df["datetime"])
-            df = df.set_index("datetime")
-        elif "timestamp" in df.columns:
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
-            df = df.set_index("timestamp")
+        if df.empty:
+            logger.warning("Latest history fetch returned empty DataFrame.")
+            return None, None
 
-        df = df.sort_index()
-        if len(df) > 0 and isinstance(df.index, pd.DatetimeIndex) and df.index.min().hour < 7:
-            df.index = df.index + pd.Timedelta(hours=5, minutes=30)
-
-        # Update rolling cache
-        self.history_cache = pd.concat([self.history_cache, df]).drop_duplicates()
-        self.history_cache = self.history_cache.tail(LOOKBACK_BARS)
+        # Update rolling cache — deduplicate on index (datetime), keeping latest values
+        combined = pd.concat([self.history_cache, df])
+        combined = combined[~combined.index.duplicated(keep="last")]
+        combined = combined.sort_index()
+        self.history_cache = combined.tail(LOOKBACK_BARS)
 
         # Calculate Supertrend
         df_calc = self.history_cache.copy()
@@ -193,17 +287,18 @@ class SupertrendOptionsBot:
 
     def get_option_contract(self, underlying_price, direction):
         """Find the correct CE/PE contract at the configured strike offset."""
-        print(
+        logger.info(
             f"Looking up option contract for {UNDERLYING_SYMBOL} at {underlying_price} ({direction})..."
         )
-        instruments = self.client.instruments(exchange="NFO")
-        if isinstance(instruments, dict) and instruments.get("status") == "error":
-            print("Failed to fetch instruments.")
+
+        # Use cached instruments; refresh if not available
+        if self._instruments_cache is None or self._instruments_cache.empty:
+            self._cache_instruments()
+        if self._instruments_cache is None or self._instruments_cache.empty:
+            logger.error("No instrument data available.")
             return None
 
-        df_inst = (
-            instruments if isinstance(instruments, pd.DataFrame) else pd.DataFrame(instruments)
-        )
+        df_inst = self._instruments_cache
         df_opts = df_inst[
             (df_inst["name"] == UNDERLYING_SYMBOL) & (df_inst["instrumenttype"].isin(["CE", "PE"]))
         ].copy()
@@ -221,8 +316,8 @@ class SupertrendOptionsBot:
         nearest_expiry = future_opts["expiry_date"].min()
         valid_opts = future_opts[future_opts["expiry_date"] == nearest_expiry]
 
-        # Calculate Target Strike
-        base_strike = round(underlying_price / 100) * 100
+        # Calculate Target Strike — use int() truncation for floor-to-nearest
+        base_strike = int(round(underlying_price / STRIKE_STEP)) * STRIKE_STEP
         if direction == "UP":
             target_strike = base_strike - STRIKE_OFFSET  # CE ITM
             opt_type = "CE"
@@ -230,9 +325,8 @@ class SupertrendOptionsBot:
             target_strike = base_strike + STRIKE_OFFSET  # PE ITM
             opt_type = "PE"
 
-        # Liquidity Window: Target Strike and +/- 100 points
-        step = 100
-        strikes_to_check = [target_strike - step, target_strike, target_strike + step]
+        # Liquidity Window: Target Strike and +/- one step
+        strikes_to_check = [target_strike - STRIKE_STEP, target_strike, target_strike + STRIKE_STEP]
 
         candidates = valid_opts[
             (valid_opts["strike"].isin(strikes_to_check))
@@ -255,23 +349,50 @@ class SupertrendOptionsBot:
                     oi = float(data.get("oi", 0))
                     score = vol + oi
 
-                    print(f"  -> Candidate {sym}: Volume={vol}, OI={oi}")
+                    logger.info(f"  -> Candidate {sym}: Volume={vol}, OI={oi}")
 
                     if score > best_score:
                         best_score = score
                         best_symbol = sym
             except Exception as e:
-                print(f"  -> Failed to quote {sym}: {e}")
+                logger.warning(f"  -> Failed to quote {sym}: {e}")
 
         if best_symbol:
-            print(f"✅ Selected Most Liquid Contract: {best_symbol} (Score: {best_score})")
+            logger.info(f"✅ Selected Most Liquid Contract: {best_symbol} (Score: {best_score})")
             return best_symbol
 
         return None
 
+    def _get_fill_price(self, order_id, fallback_exchange, fallback_symbol):
+        """Attempt to get the actual fill price from orderstatus; fall back to LTP.
+
+        SDK ref: orderstatus() returns {"status": "success", "data": {"average_price": ...}}
+        for completed orders. Use tradebook() as secondary fallback.
+        """
+        if order_id:
+            try:
+                status_resp = self.client.orderstatus(order_id=order_id)
+                if isinstance(status_resp, dict) and status_resp.get("status") == "success":
+                    avg_price = float(status_resp.get("data", {}).get("average_price", 0))
+                    if avg_price > 0:
+                        return avg_price
+            except Exception as e:
+                logger.warning(f"Failed to fetch fill price from orderstatus: {e}")
+
+        # Fallback to live LTP
+        return self.get_live_ltp(fallback_exchange, fallback_symbol)
+
     def execute_trade(self, symbol, direction="UP"):
         """Place Market Order and initialize position tracking."""
-        print(f"\n🚀 EXECUTING ENTRY FOR {symbol} ({direction})")
+        # Guard: never open a second position while one is active
+        if self.active_position:
+            logger.warning(
+                f"Ignoring entry signal for {symbol} — already in active trade: "
+                f"{self.active_position} ({self.active_direction})"
+            )
+            return
+
+        logger.info(f"\n🚀 EXECUTING ENTRY FOR {symbol} ({direction})")
         try:
             resp = self.client.placeorder(
                 symbol=symbol,
@@ -280,36 +401,50 @@ class SupertrendOptionsBot:
                 price_type="MARKET",
                 product=PRODUCT,
                 quantity=QUANTITY,
-                strategy="SupertrendOptionsBot",
+                strategy=STRATEGY_NAME,
             )
-            print(f"Order Response: {resp}")
+            logger.info(f"Order Response: {resp}")
+
+            # Gate all state updates on order success
+            if not isinstance(resp, dict) or resp.get("status") != "success":
+                logger.error(f"Entry order REJECTED or FAILED: {resp}")
+                return
+
+            order_id = resp.get("orderid")
 
             # Subscribe to option WebSocket stream if active
             if self.use_websocket:
                 try:
                     self.client.subscribe_ltp([{"exchange": "NFO", "symbol": symbol}])
-                    print(f"Subscribed WebSocket LTP feed for active option {symbol}")
+                    logger.info(f"Subscribed WebSocket LTP feed for active option {symbol}")
                 except Exception as e:
-                    print(f"Failed to subscribe WS for {symbol}: {e}")
+                    logger.warning(f"Failed to subscribe WS for {symbol}: {e}")
 
-            # Fetch execution price
-            self.entry_price = self.get_live_ltp("NFO", symbol)
+            # Fetch actual fill price (from orderstatus), fall back to LTP
+            time.sleep(0.5)  # Brief pause for order to fill
+            self.entry_price = self._get_fill_price(order_id, "NFO", symbol)
             self.max_favorable_price = self.entry_price
 
-            if TRAIL_SL_PCT and self.entry_price > 0:
+            if TRAIL_SL_PCT > 0 and self.entry_price > 0:
                 self.current_sl_price = self.entry_price * (1 - (TRAIL_SL_PCT / 100.0))
 
             self.active_position = symbol
             self.active_direction = direction
-            print(
-                f"✅ Entered {symbol} ({direction}) at {self.entry_price}. SL set to {self.current_sl_price:.2f}"
+
+            # Track daily trade count
+            self._daily_trade_count += 1
+
+            logger.info(
+                f"✅ Entered {symbol} ({direction}) at {self.entry_price:.2f}. "
+                f"SL set to {self.current_sl_price:.2f}. "
+                f"Trade #{self._daily_trade_count} today."
             )
         except Exception as e:
-            print(f"Execution failed: {e}")
+            logger.error(f"Execution failed: {e}")
 
     def exit_trade(self, reason):
         """Exit the current active position."""
-        print(f"\n🛑 EXECUTING EXIT: {reason}")
+        logger.info(f"\n🛑 EXECUTING EXIT: {reason}")
         symbol_to_exit = self.active_position
         try:
             resp = self.client.placeorder(
@@ -319,26 +454,51 @@ class SupertrendOptionsBot:
                 price_type="MARKET",
                 product=PRODUCT,
                 quantity=QUANTITY,
-                strategy="SupertrendOptionsBot",
+                strategy=STRATEGY_NAME,
             )
-            print(f"Exit Order Response: {resp}")
+            logger.info(f"Exit Order Response: {resp}")
 
             # Unsubscribe option WebSocket feed
             if self.use_websocket and symbol_to_exit:
                 try:
                     self.client.unsubscribe_ltp([{"exchange": "NFO", "symbol": symbol_to_exit}])
-                    print(f"Unsubscribed WebSocket LTP feed for {symbol_to_exit}")
+                    logger.info(f"Unsubscribed WebSocket LTP feed for {symbol_to_exit}")
                 except Exception as e:
-                    print(f"Failed to unsubscribe WS for {symbol_to_exit}: {e}")
+                    logger.warning(f"Failed to unsubscribe WS for {symbol_to_exit}: {e}")
 
             self.active_position = None
             self.active_direction = None
+            self._last_exit_time = time.time()
         except Exception as e:
-            print(f"Exit failed: {e}")
+            logger.error(f"Exit failed: {e}")
+
+    def _is_eod_squareoff_time(self) -> bool:
+        """Check if we've passed the EOD square-off deadline (default 15:15 IST)."""
+        now_ist = get_now_ist()
+        return now_ist.time() >= dt_time(EOD_SQUAREOFF_HOUR, EOD_SQUAREOFF_MINUTE)
+
+    def _is_new_candle(self) -> bool:
+        """Check if the latest bar in the cache is a new candle we haven't processed yet."""
+        if self.history_cache.empty:
+            return False
+        latest_ts = self.history_cache.index[-1]
+        if self._last_processed_bar_ts is None or latest_ts != self._last_processed_bar_ts:
+            self._last_processed_bar_ts = latest_ts
+            return True
+        return False
 
     def manage_position(self):
         """Monitor live price via WebSocket/REST and manage Trailing Stop / Take Profit / Index ST Flip."""
         if not self.active_position:
+            return
+
+        # EOD square-off check for MIS positions
+        if PRODUCT == "MIS" and self._is_eod_squareoff_time():
+            logger.info(
+                f"EOD square-off time reached ({EOD_SQUAREOFF_HOUR}:{EOD_SQUAREOFF_MINUTE:02d} IST). "
+                "Force-exiting active position."
+            )
+            self.exit_trade("EOD_SQUAREOFF")
             return
 
         try:
@@ -349,28 +509,28 @@ class SupertrendOptionsBot:
             # 1. Update Trailing Stop
             if current_price > self.max_favorable_price:
                 self.max_favorable_price = current_price
-                if TRAIL_SL_PCT:
+                if TRAIL_SL_PCT > 0:
                     new_sl = self.max_favorable_price * (1 - (TRAIL_SL_PCT / 100.0))
                     if new_sl > self.current_sl_price:
                         self.current_sl_price = new_sl
-                        print(f"Trailing SL moved up to: {self.current_sl_price:.2f}")
+                        logger.info(f"Trailing SL moved up to: {self.current_sl_price:.2f}")
 
             # 2. Check Stop Loss Hit
-            if TRAIL_SL_PCT and current_price <= self.current_sl_price:
-                print(f"Price {current_price} crossed SL {self.current_sl_price:.2f}")
+            if TRAIL_SL_PCT > 0 and current_price <= self.current_sl_price:
+                logger.info(f"Price {current_price} crossed SL {self.current_sl_price:.2f}")
                 self.exit_trade("TRAILING_STOP_HIT")
                 return
 
             # 3. Check Take Profit Hit
-            if TAKE_PROFIT_PCT:
+            if TAKE_PROFIT_PCT is not None and TAKE_PROFIT_PCT > 0:
                 tp_target = self.entry_price * (1 + (TAKE_PROFIT_PCT / 100.0))
                 if current_price >= tp_target:
-                    print(f"Price {current_price} hit TP {tp_target:.2f}")
+                    logger.info(f"Price {current_price} hit TP {tp_target:.2f}")
                     self.exit_trade("TAKE_PROFIT_HIT")
                     return
 
-            # 4. Check Underlying Index Supertrend Flip
-            if hasattr(self, "active_direction") and self.active_direction:
+            # 4. Check Underlying Index Supertrend Flip (only on new candle boundaries)
+            if self.active_direction:
                 df, st = self.update_cache_and_calc()
                 if (
                     df is not None
@@ -378,85 +538,142 @@ class SupertrendOptionsBot:
                     and st is not None
                     and not st.empty
                     and len(st) >= 2
+                    and self._is_new_candle()
                 ):
                     prev_st = st.iloc[-2]
                     st_dir = prev_st.iloc[1]
                     if self.active_direction == "UP" and st_dir == -1:
-                        print(
+                        logger.info(
                             "Underlying Index Supertrend flipped to Bearish (-1) while holding CE!"
                         )
                         self.exit_trade("INDEX_ST_FLIP")
                         return
                     elif self.active_direction == "DOWN" and st_dir == 1:
-                        print(
+                        logger.info(
                             "Underlying Index Supertrend flipped to Bullish (1) while holding PE!"
                         )
                         self.exit_trade("INDEX_ST_FLIP")
                         return
 
         except Exception as e:
-            print(f"Position management error: {e}")
+            logger.error(f"Position management error: {e}")
+
+    def _reset_daily_counters_if_needed(self):
+        """Reset daily trade counter on a new trading day."""
+        today = get_now_ist().date()
+        if today != self._trade_date:
+            self._trade_date = today
+            self._daily_trade_count = 0
+            logger.info(f"New trading day: {today}. Daily trade count reset.")
+
+    def _shutdown(self):
+        """Graceful shutdown: exit positions, unsubscribe, disconnect WebSocket."""
+        logger.info("Initiating graceful shutdown...")
+
+        # Exit active position if any
+        if self.active_position:
+            logger.warning("Active position detected during shutdown — exiting immediately.")
+            self.exit_trade("BOT_SHUTDOWN")
+
+        # Disconnect WebSocket
+        if self.use_websocket:
+            try:
+                self.client.unsubscribe_ltp([{"exchange": EXCHANGE, "symbol": UNDERLYING_SYMBOL}])
+            except Exception:
+                pass
+            try:
+                self.client.disconnect()
+                logger.info("WebSocket disconnected.")
+            except Exception:
+                pass
+
+        logger.info("Shutdown complete.")
 
     def run(self):
-        print("\nBot is now actively monitoring the market...")
-        while True:
-            try:
-                # 1. Manage Active Position (Fast execution loop)
-                if self.active_position:
-                    self.manage_position()
-                    time.sleep(0.5)  # Fast sub-second monitoring for exits
-                    continue
+        logger.info("\nBot is now actively monitoring the market...")
+        try:
+            while True:
+                try:
+                    self._reset_daily_counters_if_needed()
 
-                # 2. Monitor for Entry
-
-                # Time of Day Filter (IST Timezone)
-                ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
-                current_ist_hour = ist_now.hour
-                if ALLOWED_START_HOUR is not None and ALLOWED_END_HOUR is not None:
-                    if not (ALLOWED_START_HOUR <= current_ist_hour <= ALLOWED_END_HOUR):
-                        time.sleep(60)  # Sleep outside trading hours
+                    # 1. Manage Active Position (Fast execution loop)
+                    if self.active_position:
+                        self.manage_position()
+                        time.sleep(0.5)  # Fast sub-second monitoring for exits
                         continue
 
-                df, st = self.update_cache_and_calc()
-                if df is not None and not df.empty and len(df) >= 2:
-                    # Eliminate Lookahead Bias: Use Supertrend level from previous COMPLETED candle (iloc[-2]).
-                    prev_st = st.iloc[-2]
-                    st_val = prev_st.iloc[0]
-                    st_dir = prev_st.iloc[1]
+                    # 2. Monitor for Entry
 
-                    # Fetch live LTP of underlying symbol from WebSocket feed / REST fallback
-                    live_ltp = self.get_live_ltp(EXCHANGE, UNDERLYING_SYMBOL)
-                    if live_ltp == 0.0:
-                        live_ltp = float(df.iloc[-1]["close"])
+                    # EOD check — no new entries after square-off time
+                    if self._is_eod_squareoff_time():
+                        time.sleep(60)
+                        continue
 
-                    latest_bar = df.iloc[-1]
+                    # Time of Day Filter (IST Timezone)
+                    ist_now = get_now_ist()
+                    current_ist_hour = ist_now.hour
+                    if ALLOWED_START_HOUR is not None and ALLOWED_END_HOUR is not None:
+                        if not (ALLOWED_START_HOUR <= current_ist_hour <= ALLOWED_END_HOUR):
+                            time.sleep(60)  # Sleep outside trading hours
+                            continue
 
-                    # Touch logic against static ST line (prev bar):
-                    touch_detected = False
-                    if live_ltp > 0:
-                        if st_dir == 1 and (live_ltp <= st_val or latest_bar["low"] <= st_val):
-                            touch_detected = True
-                        elif st_dir == -1 and (live_ltp >= st_val or latest_bar["high"] >= st_val):
-                            touch_detected = True
+                    # Daily trade limit check
+                    if self._daily_trade_count >= MAX_TRADES_PER_DAY:
+                        time.sleep(60)
+                        continue
 
-                    if touch_detected:
-                        direction = "UP" if st_dir == 1 else "DOWN"
-                        print(
-                            f"[{ist_now.strftime('%Y-%m-%d %H:%M:%S IST')}] Touch Detected! Direction: {direction} | Live LTP: {live_ltp} | ST (Prev Bar): {st_val:.2f}"
-                        )
+                    # Re-entry cooldown check
+                    if (time.time() - self._last_exit_time) < REENTRY_COOLDOWN_SECONDS:
+                        time.sleep(5)
+                        continue
 
-                        contract = self.get_option_contract(live_ltp, direction)
-                        if contract:
-                            self.execute_trade(contract, direction=direction)
+                    df, st = self.update_cache_and_calc()
+                    if df is not None and not df.empty and len(df) >= 2:
+                        # Eliminate Lookahead Bias: Use Supertrend level from previous COMPLETED candle (iloc[-2]).
+                        prev_st = st.iloc[-2]
+                        st_val = prev_st.iloc[0]
+                        st_dir = prev_st.iloc[1]
 
-                time.sleep(2)
+                        # Fetch live LTP of underlying symbol from WebSocket feed / REST fallback
+                        live_ltp = self.get_live_ltp(EXCHANGE, UNDERLYING_SYMBOL)
+                        if live_ltp == 0.0:
+                            live_ltp = float(df.iloc[-1]["close"])
 
-            except KeyboardInterrupt:
-                print("\nBot stopped by user.")
-                break
-            except Exception as e:
-                print(f"Error in main loop: {e}")
-                time.sleep(5)
+                        latest_bar = df.iloc[-1]
+
+                        # Touch logic against static ST line (prev bar):
+                        touch_detected = False
+                        if live_ltp > 0:
+                            if st_dir == 1 and (live_ltp <= st_val or latest_bar["low"] <= st_val):
+                                touch_detected = True
+                            elif st_dir == -1 and (
+                                live_ltp >= st_val or latest_bar["high"] >= st_val
+                            ):
+                                touch_detected = True
+
+                        if touch_detected:
+                            direction = "UP" if st_dir == 1 else "DOWN"
+                            logger.info(
+                                f"[{ist_now.strftime('%Y-%m-%d %H:%M:%S IST')}] Touch Detected! "
+                                f"Direction: {direction} | Live LTP: {live_ltp} | ST (Prev Bar): {st_val:.2f}"
+                            )
+
+                            contract = self.get_option_contract(live_ltp, direction)
+                            if contract:
+                                self.execute_trade(contract, direction=direction)
+
+                    time.sleep(2)
+
+                except KeyboardInterrupt:
+                    raise
+                except Exception as e:
+                    logger.error(f"Error in main loop: {e}")
+                    time.sleep(5)
+
+        except KeyboardInterrupt:
+            logger.info("\nBot stopped by user (KeyboardInterrupt).")
+        finally:
+            self._shutdown()
 
 
 if __name__ == "__main__":
