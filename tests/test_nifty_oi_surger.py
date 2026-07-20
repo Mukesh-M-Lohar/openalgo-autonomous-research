@@ -11,6 +11,22 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../scri
 from scripts.bot.nifty_oi_surger_bot import NiftyOISurgerBot
 
 
+def is_server_available():
+    try:
+        import httpx
+
+        r = httpx.get("http://127.0.0.1:5000/health", timeout=1.0)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not is_server_available(),
+    reason="OpenAlgo live API server is not running on http://127.0.0.1:5000",
+)
+
+
 @pytest.fixture
 def actual_bot():
     bot = NiftyOISurgerBot()

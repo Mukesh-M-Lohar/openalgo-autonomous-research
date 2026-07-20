@@ -12,6 +12,22 @@ from openalgo import api
 from scripts.bot.intraday_options_bot import FnOScanner, OptionChainAnalyzer
 
 
+def is_server_available():
+    try:
+        import httpx
+
+        r = httpx.get("http://127.0.0.1:5000/health", timeout=1.0)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not is_server_available(),
+    reason="OpenAlgo live API server is not running on http://127.0.0.1:5000",
+)
+
+
 @pytest.fixture
 def client():
     # Instantiate actual client connecting to the running local server
