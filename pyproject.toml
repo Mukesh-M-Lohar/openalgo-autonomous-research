@@ -68,4 +68,7 @@ ignore = [
 testpaths = ["tests"]
 
 [tool.pyright]
-extraPaths = ["src", "scripts", "scripts/supertrend_scanner"]
+venvPath = "."
+venv = ".venv"
+extraPaths = ["src", "scripts", "scripts/supertrend_scanner", "scripts/bot"]
+pythonVersion = "3.12"
