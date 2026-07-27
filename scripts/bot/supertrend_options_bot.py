@@ -16,13 +16,90 @@ import time
 from datetime import datetime, timedelta, timezone
 from datetime import time as dt_time
 
+import numpy as np
 import pandas as pd
-import pandas_ta as ta
 from dotenv import load_dotenv
+
+# ----------------------------------------------------------------------
+# Core Indicator Functions (No external dependencies)
+# ----------------------------------------------------------------------
+
+
+def wilder_smooth(series: pd.Series, period: int) -> pd.Series:
+    """Wilder's smoothing (used by ATR)."""
+    return series.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+
+
+def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Average True Range calculation."""
+    high, low, close = df["high"], df["low"], df["close"]
+    prev_close = close.shift(1)
+    tr = pd.concat([high - low, (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(
+        axis=1
+    )
+    return wilder_smooth(tr, period)
+
+
+def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0):
+    """
+    Returns df with columns: st_upperband, st_lowerband, st_trend (1=up, -1=down),
+    and st_line (the plotted supertrend line itself).
+    """
+    high, low, close = df["high"], df["low"], df["close"]
+    hl2 = (high + low) / 2
+    tr_atr = atr(df, period)
+
+    basic_upper = hl2 + multiplier * tr_atr
+    basic_lower = hl2 - multiplier * tr_atr
+
+    final_upper = basic_upper.copy()
+    final_lower = basic_lower.copy()
+    trend = pd.Series(1, index=df.index)
+
+    for i in range(1, len(df)):
+        prev_final_upper = final_upper.iloc[i - 1]
+        prev_final_lower = final_lower.iloc[i - 1]
+
+        if pd.isna(prev_final_upper):
+            final_upper.iloc[i] = basic_upper.iloc[i]
+        elif basic_upper.iloc[i] < prev_final_upper or close.iloc[i - 1] > prev_final_upper:
+            final_upper.iloc[i] = basic_upper.iloc[i]
+        else:
+            final_upper.iloc[i] = prev_final_upper
+
+        if pd.isna(prev_final_lower):
+            final_lower.iloc[i] = basic_lower.iloc[i]
+        elif basic_lower.iloc[i] > prev_final_lower or close.iloc[i - 1] < prev_final_lower:
+            final_lower.iloc[i] = basic_lower.iloc[i]
+        else:
+            final_lower.iloc[i] = prev_final_lower
+
+        if pd.isna(prev_final_upper) or pd.isna(prev_final_lower):
+            trend.iloc[i] = trend.iloc[i - 1]
+        elif close.iloc[i] > prev_final_upper:
+            trend.iloc[i] = 1
+        elif close.iloc[i] < prev_final_lower:
+            trend.iloc[i] = -1
+        else:
+            trend.iloc[i] = trend.iloc[i - 1]
+            if trend.iloc[i] == 1 and final_lower.iloc[i] < prev_final_lower:
+                final_lower.iloc[i] = prev_final_lower
+            if trend.iloc[i] == -1 and final_upper.iloc[i] > prev_final_upper:
+                final_upper.iloc[i] = prev_final_upper
+
+    st_line = np.where(trend == 1, final_lower, final_upper)
+
+    out = df.copy()
+    out["st_upperband"] = final_upper
+    out["st_lowerband"] = final_lower
+    out["st_trend"] = trend
+    out["st_line"] = st_line
+    return out
+
 
 # --- SDK Import with guard ---
 try:
-    from openalgo import api
+    from openalgo import api, ta
 except ImportError:
     print("ERROR: Install the SDK first:  pip install openalgo")
     sys.exit(1)
@@ -38,8 +115,11 @@ logging.basicConfig(
 logger = logging.getLogger("SupertrendOptionsBot")
 
 # --- Configuration ---
-API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
+API_KEY = os.getenv(
+    "OPENALGO_API_KEY", "b45feb0a6973ed00fe86d25ace49d4da8dfe8d0a78c334455d46254ded28a26d"
+)
 API_HOST = os.getenv("OPENALGO_HOST", "http://127.0.0.1:5000")
+WS_ENDPOINT = "ws://127.0.0.1:8765"
 
 # Strategy Parameters (Best from Backtest)
 UNDERLYING_SYMBOL = os.getenv("UNDERLYING_SYMBOL", "BANKNIFTY")
@@ -53,7 +133,7 @@ STRIKE_STEP = int(
 )  # Strike interval (100 for BANKNIFTY, 50 for NIFTY)
 QUANTITY = int(os.getenv("QUANTITY", "30"))
 PRODUCT = os.getenv("PRODUCT", "MIS")
-AVOID_0DTE = os.getenv("AVOID_0DTE", "True").lower() == "true"
+AVOID_0DTE = True
 STRATEGY_NAME = "SupertrendOptionsBot"
 
 # Time of Day Filter (IST) — configurable via env
@@ -65,11 +145,28 @@ TRAIL_SL_PCT = float(os.getenv("TRAIL_SL_PCT", "10.0"))  # Trailing stop percent
 TAKE_PROFIT_PCT = os.getenv("TAKE_PROFIT_PCT", "")  # Empty string or float; empty = disabled
 TAKE_PROFIT_PCT = float(TAKE_PROFIT_PCT) if TAKE_PROFIT_PCT else None
 
+# Touch Detection
+TOUCH_PCT = float(os.getenv("TOUCH_PCT", "0.07"))  # How close to band to count as touch (%)
+
+# ADX Filter
+ADX_PERIOD = int(os.getenv("ADX_PERIOD", "14"))
+ADX_THRESHOLD = float(os.getenv("ADX_THRESHOLD", "25.0"))
+
+# Moving Average Filter
+MA_PERIOD = int(os.getenv("MA_PERIOD", "150"))  # Default 150 for approx 2 days of 5m candles
+
+# Option Supertrend (for analysis logging, matches backtester)
+OPTION_TIMEFRAME = os.getenv("OPTION_TIMEFRAME", "3m")
+OPTION_ST_PERIOD = int(os.getenv("OPTION_ST_PERIOD", "10"))
+OPTION_ST_MULT = float(os.getenv("OPTION_ST_MULT", "3.0"))
+
 # Cache Lookback Window
-LOOKBACK_BARS = 100  # Number of historical bars to keep in memory
+LOOKBACK_BARS = max(
+    200, MA_PERIOD + 50
+)  # Number of historical bars to keep in memory (ensure enough for MA)
 
 # WebSocket Data Feed Toggle
-USE_WEBSOCKET = os.getenv("USE_WEBSOCKET", "true").lower() == "true"
+USE_WEBSOCKET = True
 
 # Daily Trade Limit
 MAX_TRADES_PER_DAY = int(os.getenv("MAX_TRADES_PER_DAY", "3"))
@@ -93,7 +190,7 @@ def get_now_ist() -> datetime:
 class SupertrendOptionsBot:
     def __init__(self):
         logger.info(f"Initializing Supertrend Options Bot for {UNDERLYING_SYMBOL}...")
-        self.client = api(api_key=API_KEY, host=API_HOST)
+        self.client = api(api_key=API_KEY, host=API_HOST, ws_url=WS_ENDPOINT)
         self.history_cache = pd.DataFrame()
         self.active_position = None
         self.active_direction = None
@@ -164,20 +261,34 @@ class SupertrendOptionsBot:
             try:
                 res = self.client.get_ltp(exchange, symbol)
                 if isinstance(res, dict):
-                    # Correct SDK shape: res -> {"data": {"ltp": <float>}} or similar
-                    ltp_val = res.get("data", {}).get("ltp", 0)
-                    price = float(ltp_val) if ltp_val else 0.0
-                    if price > 0:
-                        return price
+                    # Actual SDK cache shape:
+                    # {'ltp': {'NSE_INDEX': {'BANKNIFTY': {'timestamp': 12345, 'ltp': 57602.3}}}}
+                    if "ltp" in res and exchange in res["ltp"] and symbol in res["ltp"][exchange]:
+                        price = float(res["ltp"][exchange][symbol].get("ltp", 0))
+                        if price > 0:
+                            return price
             except Exception as e:
                 logger.warning(f"Failed to fetch WS LTP for {exchange}:{symbol}: {e}")
 
         # Fallback to REST Quote API
+        # Rate limit REST fallback to max 1 request per second per symbol
+        if not hasattr(self, "_rest_ltp_cache"):
+            self._rest_ltp_cache = {}
+
+        now = time.time()
+        cache_key = f"{exchange}:{symbol}"
+        if cache_key in self._rest_ltp_cache:
+            last_time, last_price = self._rest_ltp_cache[cache_key]
+            if (now - last_time) < 1.0:
+                return last_price
+
         try:
             q_resp = self.client.quotes(symbol=symbol, exchange=exchange)
             if q_resp and q_resp.get("status") == "success":
                 data = q_resp.get("data", {})
-                return float(data.get("ltp", 0))
+                price = float(data.get("ltp", 0))
+                self._rest_ltp_cache[cache_key] = (now, price)
+                return price
         except Exception as e:
             logger.warning(f"REST quote fallback failed for {exchange}:{symbol}: {e}")
 
@@ -239,6 +350,14 @@ class SupertrendOptionsBot:
 
     def update_cache_and_calc(self):
         """Fetch the latest bars, update rolling cache, and calc Supertrend."""
+        # Rate-limit history fetching to avoid broker limits (e.g. Angel 403 errors)
+        # Since TIMEFRAME is 5m and we only use the PREVIOUS closed candle (iloc[-2]),
+        # fetching once every 60 seconds is more than enough and heavily reduces API load.
+        now = time.time()
+        if hasattr(self, "_last_hist_fetch_time") and (now - self._last_hist_fetch_time) < 60:
+            if hasattr(self, "_last_hist_df") and hasattr(self, "_last_hist_st"):
+                return self._last_hist_df, self._last_hist_st
+
         start_date = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
         end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -267,23 +386,15 @@ class SupertrendOptionsBot:
 
         # Calculate Supertrend
         df_calc = self.history_cache.copy()
-        st = ta.supertrend(
-            df_calc["high"], df_calc["low"], df_calc["close"], length=ST_PERIOD, multiplier=ST_MULT
-        )
+        st = supertrend(df_calc, period=ST_PERIOD, multiplier=ST_MULT)
         if st is None or st.empty:
             return None, None
 
-        st_col = [
-            c
-            for c in st.columns
-            if c.startswith("SUPERT_")
-            and not c.startswith("SUPERTd_")
-            and not c.startswith("SUPERTl_")
-            and not c.startswith("SUPERTs_")
-        ][0]
-        dir_col = [c for c in st.columns if c.startswith("SUPERTd_")][0]
+        self._last_hist_fetch_time = time.time()
+        self._last_hist_df = df_calc
+        self._last_hist_st = st[["st_line", "st_trend"]]
 
-        return df_calc, st[[st_col, dir_col]]
+        return self._last_hist_df, self._last_hist_st
 
     def get_option_contract(self, underlying_price, direction):
         """Find the correct CE/PE contract at the configured strike offset."""
@@ -345,6 +456,9 @@ class SupertrendOptionsBot:
                 q = self.client.quotes(symbol=sym, exchange="NFO")
                 if isinstance(q, dict) and q.get("status") == "success":
                     data = q.get("data", {})
+                    if not isinstance(data, dict):
+                        logger.warning(f"  -> Unexpected data type for {sym}: {type(data)}")
+                        continue
                     vol = float(data.get("volume", 0))
                     oi = float(data.get("oi", 0))
                     score = vol + oi
@@ -382,6 +496,45 @@ class SupertrendOptionsBot:
         # Fallback to live LTP
         return self.get_live_ltp(fallback_exchange, fallback_symbol)
 
+    def _check_option_supertrend(self, symbol) -> bool:
+        """Fetch recent option history, calculate Supertrend, and verify it is UP.
+
+        Returns True if the Option ST is UP (1). Returns False otherwise.
+        """
+        try:
+            start_date = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d")
+            end_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+            opt_hist = self.client.history(
+                symbol=symbol,
+                exchange="NFO",
+                interval=OPTION_TIMEFRAME,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            opt_df = self._parse_history_df(opt_hist)
+
+            if opt_df.empty or len(opt_df) <= OPTION_ST_PERIOD:
+                logger.info(f"Option ST Filter: Not enough bars for {symbol} ({len(opt_df)} bars)")
+                return False
+
+            opt_st = supertrend(opt_df, period=OPTION_ST_PERIOD, multiplier=OPTION_ST_MULT)
+            if opt_st is None or opt_st.empty:
+                return False
+
+            latest_dir = opt_st["st_trend"].iloc[-1]
+
+            if latest_dir == 1:
+                logger.info(f"✅ Option ST Filter Passed for {symbol}: Trend is UP")
+                return True
+            else:
+                logger.info(f"🚫 Option ST Filter Failed for {symbol}: Trend is DOWN/UNKNOWN")
+                return False
+
+        except Exception as e:
+            logger.warning(f"Option ST calculation failed for {symbol}: {e}")
+            return False
+
     def execute_trade(self, symbol, direction="UP"):
         """Place Market Order and initialize position tracking."""
         # Guard: never open a second position while one is active
@@ -390,6 +543,15 @@ class SupertrendOptionsBot:
                 f"Ignoring entry signal for {symbol} — already in active trade: "
                 f"{self.active_position} ({self.active_direction})"
             )
+            return
+
+        # 🚨 FILTER: Option Supertrend must be UP
+        logger.info(f"Checking Option Supertrend filter for {symbol}...")
+        if not self._check_option_supertrend(symbol):
+            logger.warning(
+                f"Skipping trade for {symbol} — Option ST is not UP. Entering 60s cooldown."
+            )
+            self._failed_entry_cooldown_until = time.time() + 60
             return
 
         logger.info(f"\n🚀 EXECUTING ENTRY FOR {symbol} ({direction})")
@@ -439,6 +601,7 @@ class SupertrendOptionsBot:
                 f"SL set to {self.current_sl_price:.2f}. "
                 f"Trade #{self._daily_trade_count} today."
             )
+
         except Exception as e:
             logger.error(f"Execution failed: {e}")
 
@@ -602,6 +765,11 @@ class SupertrendOptionsBot:
                         time.sleep(0.5)  # Fast sub-second monitoring for exits
                         continue
 
+                    # Failed entry cooldown check
+                    if time.time() < getattr(self, "_failed_entry_cooldown_until", 0):
+                        time.sleep(2)
+                        continue
+
                     # 2. Monitor for Entry
 
                     # EOD check — no new entries after square-off time
@@ -641,15 +809,16 @@ class SupertrendOptionsBot:
 
                         latest_bar = df.iloc[-1]
 
-                        # Touch logic against static ST line (prev bar):
+                        # Proximity-based touch detection (matches backtester logic):
+                        # Check if live price is within TOUCH_PCT% of the previous bar's ST band.
                         touch_detected = False
                         if live_ltp > 0:
-                            if st_dir == 1 and (live_ltp <= st_val or latest_bar["low"] <= st_val):
-                                touch_detected = True
-                            elif st_dir == -1 and (
-                                live_ltp >= st_val or latest_bar["high"] >= st_val
-                            ):
-                                touch_detected = True
+                            # Active band: lower when uptrend, upper when downtrend
+                            active_band = st_val
+                            dist_pct = abs(live_ltp - active_band) / live_ltp * 100
+                            if dist_pct <= TOUCH_PCT:
+                                if st_dir == 1 or st_dir == -1:
+                                    touch_detected = True
 
                         if touch_detected:
                             direction = "UP" if st_dir == 1 else "DOWN"
@@ -658,9 +827,60 @@ class SupertrendOptionsBot:
                                 f"Direction: {direction} | Live LTP: {live_ltp} | ST (Prev Bar): {st_val:.2f}"
                             )
 
+                            # --- Filters ---
+                            filters_passed = True
+
+                            # 1. ADX Filter
+                            if len(df) > ADX_PERIOD:
+                                _, _, adx_series = ta.adx(
+                                    df["high"], df["low"], df["close"], period=ADX_PERIOD
+                                )
+                                current_adx = float(adx_series[-2])  # Use completed candle
+                                if current_adx < ADX_THRESHOLD:
+                                    logger.info(
+                                        f"Skipping trade: ADX ({current_adx:.2f}) < Threshold ({ADX_THRESHOLD})"
+                                    )
+                                    filters_passed = False
+                            else:
+                                logger.warning(
+                                    f"Not enough data for ADX calculation. Need > {ADX_PERIOD} bars, have {len(df)}"
+                                )
+                                filters_passed = False
+
+                            # 2. Moving Average Filter
+                            if len(df) > MA_PERIOD:
+                                ma_series = ta.sma(df["close"], period=MA_PERIOD)
+                                current_ma = float(ma_series[-2])  # Use completed candle
+                                prev_close = float(df.iloc[-2]["close"])
+
+                                if direction == "UP" and prev_close < current_ma:
+                                    logger.info(
+                                        f"Skipping trade: Direction is UP but Close ({prev_close}) < MA ({current_ma:.2f})"
+                                    )
+                                    filters_passed = False
+                                elif direction == "DOWN" and prev_close > current_ma:
+                                    logger.info(
+                                        f"Skipping trade: Direction is DOWN but Close ({prev_close}) > MA ({current_ma:.2f})"
+                                    )
+                                    filters_passed = False
+                            else:
+                                logger.warning(
+                                    f"Not enough data for MA calculation. Need > {MA_PERIOD} bars, have {len(df)}"
+                                )
+                                filters_passed = False
+
+                            if not filters_passed:
+                                self._failed_entry_cooldown_until = time.time() + 60
+                                continue
+
                             contract = self.get_option_contract(live_ltp, direction)
                             if contract:
                                 self.execute_trade(contract, direction=direction)
+                            else:
+                                logger.warning(
+                                    "No valid option contract found. Entering 60s cooldown."
+                                )
+                                self._failed_entry_cooldown_until = time.time() + 60
 
                     time.sleep(2)
 

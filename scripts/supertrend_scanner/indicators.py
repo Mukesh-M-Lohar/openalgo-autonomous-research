@@ -184,6 +184,7 @@ def build_indicators(
 
     # RSI
     df["rsi"] = rsi(df["close"], rsi_period)
+    df["rsi_sma"] = df["rsi"].rolling(rsi_period).mean()
 
     # EMAs / SMAs
     for p in ema_periods:
@@ -238,17 +239,24 @@ def build_indicators(
 
 def detect_supertrend_touches(df: pd.DataFrame, touch_pct: float) -> pd.DataFrame:
     """
-    For every bar, checks whether close is within `touch_pct` % of the active
-    supertrend band (lower band when trend is green/up, upper band when
-    trend is red/down). Returns only the rows that qualify as a "touch",
+    For every bar, checks whether close is within `touch_pct` % of the PREVIOUS
+    bar's active supertrend band (lower band when trend is green/up, upper band
+    when trend is red/down). Uses shifted values to avoid lookahead bias —
+    you only know the ST level after the prior bar completes.
+    Returns only the rows that qualify as a "touch",
     tagged with signal_type BUY_TOUCH / SELL_TOUCH.
     """
     d = df.copy()
 
-    is_up = d["st_trend"] == 1
-    is_down = d["st_trend"] == -1
+    # Use PREVIOUS bar's ST values to avoid lookahead bias
+    prev_trend = d["st_trend"].shift(1)
+    prev_lower = d["st_lowerband"].shift(1)
+    prev_upper = d["st_upperband"].shift(1)
 
-    band = np.where(is_up, d["st_lowerband"], d["st_upperband"])
+    is_up = prev_trend == 1
+    is_down = prev_trend == -1
+
+    band = np.where(is_up, prev_lower, prev_upper)
     dist_pct = (d["close"] - band).abs() / d["close"] * 100
 
     d["active_band"] = band

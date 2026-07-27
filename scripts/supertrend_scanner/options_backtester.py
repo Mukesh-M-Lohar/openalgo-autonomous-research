@@ -19,17 +19,19 @@ from openalgo import api
 # =========================================================================
 # CONFIGURATION
 # =========================================================================
-# --- UNDERLYING PARAMS ---
+# --- UNDERLYING PARAMS (same names as live bot) ---
 UNDERLYING_SYMBOL = "BANKNIFTY"
-UNDERLYING_EXCHANGE = "NSE_INDEX"
-UNDERLYING_TIMEFRAME = "5m"
-UNDERLYING_ST_PERIOD = 10
-UNDERLYING_ST_MULT = 3.0
+EXCHANGE = "NSE_INDEX"
+TIMEFRAME = "5m"
+ST_PERIOD = 10
+ST_MULT = 3.0
 TOUCH_PCT = 0.15  # How close to band to count as touch (%)
 
-# --- OPTION PARAMS ---
-OPTION_STRIKE_OFFSET = 500  # e.g. 500 points OTM
-OPTION_TIMEFRAME = "3m"
+# --- OPTION PARAMS (same names as live bot) ---
+STRIKE_OFFSET = 500  # 500 points ITM
+STRIKE_STEP = 100  # Strike interval (100 for BANKNIFTY, 50 for NIFTY)
+AVOID_0DTE = True  # Skip same-day expiry contracts
+OPTION_TIMEFRAME = "3m"  # Backtester-only: for option ST analysis
 OPTION_ST_PERIOD = 10
 OPTION_ST_MULT = 3.0
 
@@ -37,9 +39,9 @@ OPTION_ST_MULT = 3.0
 START_DATE = "2026-07-01"
 END_DATE = "2026-07-17"
 
-# --- EXIT RULES (Set to None to disable and use EOD exit) ---
+# --- EXIT RULES (same names as live bot) ---
 TAKE_PROFIT_PCT = None  # e.g. 10.0 for 10%
-STOP_LOSS_PCT = 10.0  # Trailing stop loss (10.0 for 10%)
+TRAIL_SL_PCT = 10.0  # Trailing stop loss percentage (10.0 for 10%)
 EXIT_ON_ST_FLIP = True  # Exit trade if Underlying Index Supertrend flips direction
 
 # --- TIME OF DAY FILTER (IST) ---
@@ -80,11 +82,9 @@ def main(print_logs=True, df_underlying_prefetched=None, opts_master_prefetched=
         df_underlying = df_underlying_prefetched.copy()
     else:
         if print_logs:
-            print(
-                f"Fetching {UNDERLYING_SYMBOL} ({UNDERLYING_TIMEFRAME}) from {START_DATE} to {END_DATE}..."
-            )
+            print(f"Fetching {UNDERLYING_SYMBOL} ({TIMEFRAME}) from {START_DATE} to {END_DATE}...")
         df_underlying = fetcher.fetch_history(
-            UNDERLYING_SYMBOL, UNDERLYING_EXCHANGE, UNDERLYING_TIMEFRAME, START_DATE, END_DATE
+            UNDERLYING_SYMBOL, EXCHANGE, TIMEFRAME, START_DATE, END_DATE
         )
 
     if df_underlying.empty:
@@ -92,11 +92,8 @@ def main(print_logs=True, df_underlying_prefetched=None, opts_master_prefetched=
         return
 
     print("Calculating Underlying Supertrend...")
-    # Calculate ATR first because indicators.py detect_supertrend_touches expects 'atr' column if we use ATR based distances, though we use pct
-    df_underlying["atr"] = atr(df_underlying, period=UNDERLYING_ST_PERIOD)
-    df_underlying = supertrend(
-        df_underlying, period=UNDERLYING_ST_PERIOD, multiplier=UNDERLYING_ST_MULT
-    )
+    df_underlying["atr"] = atr(df_underlying, period=ST_PERIOD)
+    df_underlying = supertrend(df_underlying, period=ST_PERIOD, multiplier=ST_MULT)
 
     touches = detect_supertrend_touches(df_underlying, touch_pct=TOUCH_PCT)
 
@@ -133,26 +130,43 @@ def main(print_logs=True, df_underlying_prefetched=None, opts_master_prefetched=
 
         print(f"[{current_idx}/{len(touches)}] {touch_time} | {signal} @ {price:.2f} | ", end="")
 
-        # Determine Strike
+        # Determine Strike — ITM selection matching live bot
+        base_strike = int(round(price / STRIKE_STEP)) * STRIKE_STEP
         if signal == "SELL_TOUCH":
-            strike = round((price - OPTION_STRIKE_OFFSET) / 100) * 100
+            strike = base_strike + STRIKE_OFFSET  # PE ITM
             opt_type = "PE"
         else:
-            strike = round((price + OPTION_STRIKE_OFFSET) / 100) * 100
+            strike = base_strike - STRIKE_OFFSET  # CE ITM
             opt_type = "CE"
 
-        # Find Nearest Expiry
+        # Liquidity window: target strike and +/- one step (matches live bot)
+        strikes_to_check = [strike - STRIKE_STEP, strike, strike + STRIKE_STEP]
+
+        # Find Nearest Expiry (with AVOID_0DTE support)
+        if AVOID_0DTE:
+            expiry_filter = opts_master["expiry_date"].dt.date > touch_date
+        else:
+            expiry_filter = opts_master["expiry_date"].dt.date >= touch_date
+
         valid_opts = opts_master[
-            (opts_master["strike"] == strike)
+            (opts_master["strike"].isin(strikes_to_check))
             & (opts_master["instrumenttype"] == opt_type)
-            & (opts_master["expiry_date"].dt.date >= touch_date)
+            & expiry_filter
         ]
 
         if valid_opts.empty:
             print(f"No option found for {strike} {opt_type}")
             continue
 
-        opt_symbol = valid_opts.sort_values("expiry_date").iloc[0]["symbol"]
+        # Pick nearest expiry, then try each candidate strike for available history
+        nearest_expiry = valid_opts["expiry_date"].min()
+        candidates = valid_opts[valid_opts["expiry_date"] == nearest_expiry]
+        # Prefer the target strike first, then neighbors
+        candidates = candidates.copy()
+        candidates["strike_dist"] = (candidates["strike"] - strike).abs()
+        candidates = candidates.sort_values("strike_dist")
+
+        opt_symbol = candidates.iloc[0]["symbol"]
         print(f"{opt_symbol}...", end="", flush=True)
 
         # Fetch Option History
@@ -164,7 +178,7 @@ def main(print_logs=True, df_underlying_prefetched=None, opts_master_prefetched=
             print("Failed history fetch.")
             continue
 
-        # Calc Option Supertrend
+        # Calculate Option Supertrend (for analysis — live bot doesn't use this for decisions)
         if len(opt_history) > OPTION_ST_PERIOD:
             opt_history = supertrend(
                 opt_history, period=OPTION_ST_PERIOD, multiplier=OPTION_ST_MULT
@@ -184,6 +198,11 @@ def main(print_logs=True, df_underlying_prefetched=None, opts_master_prefetched=
         entry_price = entry_bar["close"]
         opt_st = entry_bar.get("st_trend", np.nan)
 
+        # 🚨 NEW RULE: Option ST must be UP (1) to enter the trade
+        if opt_st != 1:
+            print(f"Skipping {opt_symbol} at {touch_time} — Option ST is not UP (Trend: {opt_st})")
+            continue
+
         # Simulate Intraday Exit (TP / SL / EOD)
         eod_bars = opt_history[
             (opt_history.index > entry_time) & (opt_history.index.date == touch_date)
@@ -198,7 +217,7 @@ def main(print_logs=True, df_underlying_prefetched=None, opts_master_prefetched=
             tp_price = (
                 entry_price * (1 + (TAKE_PROFIT_PCT / 100.0)) if TAKE_PROFIT_PCT else float("inf")
             )
-            initial_sl = entry_price * (1 - (STOP_LOSS_PCT / 100.0)) if STOP_LOSS_PCT else 0.0
+            initial_sl = entry_price * (1 - (TRAIL_SL_PCT / 100.0)) if TRAIL_SL_PCT else 0.0
             sl_price = initial_sl
 
             und_trends = df_underlying["st_trend"].reindex(eod_bars.index, method="ffill")
@@ -207,13 +226,29 @@ def main(print_logs=True, df_underlying_prefetched=None, opts_master_prefetched=
                 high = bar["high"]
                 low = bar["low"]
 
-                # Check SL against the CURRENT trailing stop first
+                # 1. Update maximums FIRST (matches live bot order)
+                max_fav = max(max_fav, high)
+                max_adv = min(max_adv, low)
+
+                # 2. Update Trailing Stop Loss based on new high
+                if TRAIL_SL_PCT:
+                    new_sl = max_fav * (1 - (TRAIL_SL_PCT / 100.0))
+                    if new_sl > sl_price:
+                        sl_price = new_sl
+
+                # 3. Check SL hit (after trail update, matching live bot)
                 if low <= sl_price:
                     exit_price = sl_price
                     exit_reason = "TRAIL_SL_HIT" if sl_price > initial_sl else "SL_HIT"
                     break
 
-                # Check Underlying Index Supertrend Flip
+                # 4. Check Take Profit
+                if high >= tp_price:
+                    exit_price = tp_price
+                    exit_reason = "TP_HIT"
+                    break
+
+                # 5. Check Underlying Index Supertrend Flip
                 if EXIT_ON_ST_FLIP:
                     und_st_trend = und_trends.loc[idx] if idx in und_trends.index else np.nan
                     if signal == "BUY_TOUCH" and und_st_trend == -1:
@@ -224,22 +259,6 @@ def main(print_logs=True, df_underlying_prefetched=None, opts_master_prefetched=
                         exit_price = bar["close"]
                         exit_reason = "INDEX_ST_FLIP"
                         break
-
-                # Update maximums
-                max_fav = max(max_fav, high)
-                max_adv = min(max_adv, low)
-
-                # Update Trailing Stop Loss based on new high
-                if STOP_LOSS_PCT:
-                    new_sl = max_fav * (1 - (STOP_LOSS_PCT / 100.0))
-                    if new_sl > sl_price:
-                        sl_price = new_sl
-
-                # Check Take Profit
-                if high >= tp_price:
-                    exit_price = tp_price
-                    exit_reason = "TP_HIT"
-                    break
             else:
                 # Loop finished without hitting SL or TP, exit at EOD
                 exit_price = eod_bars["close"].iloc[-1]

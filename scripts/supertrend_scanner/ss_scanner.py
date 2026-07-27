@@ -3,10 +3,20 @@ Supertrend Band-Touch Scanner (single-file version)
 =====================================================
 Fetches OHLCV data from your local OpenAlgo instance for NIFTY / BANKNIFTY,
 computes Supertrend + a full indicator stack (RSI, EMAs, SMAs, ATR, MACD,
-Bollinger Bands, Stochastic, ADX, VWAP, volume ratio, OI delta if available,
-India VIX), detects every bar where price comes within TOUCH_PCT% of the
-active Supertrend band, and tracks what happened after each touch (bounce
-size, trend reversal point). Outputs one CSV per symbol + a combined CSV.
+Bollinger Bands, Stochastic, ADX, VWAP, CCI, volume ratio, OI delta if
+available, India VIX), detects every bar where price comes within TOUCH_PCT%
+of the active Supertrend band, and tracks what happened after each touch
+(bounce size, trend reversal point).
+
+Additional analytics per bar:
+  - Supertrend touch count (which touch # within the current trend segment)
+  - Fibonacci retracement/extension levels (anchored per trend segment)
+  - Price–indicator divergence detection (RSI, MACD, Stoch, ADX, OBV, CCI)
+  - Candlestick pattern recognition (Marubozu, Spinning Top, Doji, Hammer,
+    Hanging Man, Shooting Star, Inverted Hammer, Engulfing, Piercing,
+    Dark Cloud Cover, Harami, Morning Star, Evening Star)
+
+Outputs one CSV per symbol + a combined CSV.
 
 SETUP
 -----
@@ -173,6 +183,531 @@ def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0):
     return out
 
 
+def cci(df: pd.DataFrame, period: int = 20) -> pd.Series:
+    """Commodity Channel Index."""
+    typical = (df["high"] + df["low"] + df["close"]) / 3
+    sma_tp = typical.rolling(period).mean()
+    mad = typical.rolling(period).apply(lambda x: np.abs(x - x.mean()).mean(), raw=True)
+    return (typical - sma_tp) / (0.015 * mad.replace(0, np.nan))
+
+
+def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
+    """On-Balance Volume."""
+    direction = np.sign(close.diff())
+    direction.iloc[0] = 0
+    return (volume * direction).cumsum()
+
+
+# ----------------------------------------------------------------------
+# Candlestick pattern recognition (Zerodha Varsity Ch.5-10)
+# ----------------------------------------------------------------------
+
+
+def _prior_trend(close: pd.Series, lookback: int = 5) -> pd.Series:
+    """Simple trend detection: +1 uptrend, -1 downtrend, 0 flat.
+    Uses EMA(5) slope over `lookback` bars."""
+    ema5 = close.ewm(span=5, adjust=False).mean()
+    slope = ema5.diff(lookback)
+    return np.sign(slope)
+
+
+def detect_candlestick_patterns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Detect single-candle and multi-candle patterns per Zerodha Varsity.
+    Adds columns: candle_pattern, candle_signal, candle_body_pct.
+    """
+    o, h, l, c = df["open"], df["high"], df["low"], df["close"]
+    body = (c - o).abs()
+    candle_range = (h - l).replace(0, np.nan)
+    body_pct = body / candle_range * 100  # body as % of range
+    upper_shadow = h - pd.concat([o, c], axis=1).max(axis=1)
+    lower_shadow = pd.concat([o, c], axis=1).min(axis=1) - l
+    is_bullish = c > o
+    is_bearish = c < o
+    range_pct = candle_range / c * 100  # range as % of close
+
+    trend = _prior_trend(c)
+    prev_trend = trend.shift(1)  # trend before this candle
+
+    # Tolerance for "approximately equal"
+    tol = 0.005  # 0.5%
+
+    pattern = pd.Series("", index=df.index)
+    signal = pd.Series("", index=df.index)
+
+    # ---- Single-candle patterns ----
+
+    # Bullish Marubozu: Open ≈ Low, Close ≈ High, body > 1% range
+    bull_maru = ((o - l).abs() <= tol * c) & ((h - c).abs() <= tol * c) & (range_pct > 1)
+    pattern = pattern.where(~bull_maru, "BULLISH_MARUBOZU")
+    signal = signal.where(~bull_maru, "BULLISH")
+
+    # Bearish Marubozu: Open ≈ High, Close ≈ Low, body > 1% range
+    bear_maru = ((h - o).abs() <= tol * c) & ((c - l).abs() <= tol * c) & (range_pct > 1)
+    pattern = pattern.where(~bear_maru, "BEARISH_MARUBOZU")
+    signal = signal.where(~bear_maru, "BEARISH")
+
+    # Doji: body < 5% of range
+    doji = (body_pct < 5) & (candle_range.notna())
+    pattern = pattern.where(~((pattern == "") & doji), "DOJI")
+    signal = signal.where(~((signal == "") & doji), "NEUTRAL")
+
+    # Spinning Top: body < 30% of range, both shadows > body
+    spinning = (body_pct < 30) & (body_pct >= 5) & (upper_shadow > body) & (lower_shadow > body)
+    pattern = pattern.where(~((pattern == "") & spinning), "SPINNING_TOP")
+    signal = signal.where(~((signal == "") & spinning), "NEUTRAL")
+
+    # Hammer: lower_shadow >= 2*body, upper_shadow <= 0.1*range, downtrend prior
+    hammer_shape = (
+        (lower_shadow >= 2 * body) & (upper_shadow <= 0.1 * candle_range) & (body_pct >= 5)
+    )
+    hammer = hammer_shape & (prev_trend == -1)
+    pattern = pattern.where(~((pattern == "") & hammer), "HAMMER")
+    signal = signal.where(~((signal == "") & hammer), "BULLISH")
+
+    # Hanging Man: same shape as Hammer, but uptrend prior
+    hanging = hammer_shape & (prev_trend == 1)
+    pattern = pattern.where(~((pattern == "") & hanging), "HANGING_MAN")
+    signal = signal.where(~((signal == "") & hanging), "BEARISH")
+
+    # Shooting Star: upper_shadow >= 2*body, lower_shadow <= 0.1*range, uptrend prior
+    star_shape = (upper_shadow >= 2 * body) & (lower_shadow <= 0.1 * candle_range) & (body_pct >= 5)
+    shooting = star_shape & (prev_trend == 1)
+    pattern = pattern.where(~((pattern == "") & shooting), "SHOOTING_STAR")
+    signal = signal.where(~((signal == "") & shooting), "BEARISH")
+
+    # Inverted Hammer: same shape as Shooting Star, but downtrend prior
+    inv_hammer = star_shape & (prev_trend == -1)
+    pattern = pattern.where(~((pattern == "") & inv_hammer), "INVERTED_HAMMER")
+    signal = signal.where(~((signal == "") & inv_hammer), "BULLISH")
+
+    # ---- Multi-candle patterns (2-candle) ----
+
+    prev_o = o.shift(1)
+    prev_h = h.shift(1)
+    prev_l = l.shift(1)
+    prev_c = c.shift(1)
+    prev_body = (prev_c - prev_o).abs()
+    prev_is_bullish = prev_c > prev_o
+    prev_is_bearish = prev_c < prev_o
+
+    # Bullish Engulfing: prev bearish, current bullish, current body engulfs prev body
+    bull_engulf = (
+        prev_is_bearish
+        & is_bullish
+        & (c > prev_o)
+        & (o < prev_c)
+        & (body > prev_body)
+        & (prev_trend == -1)
+    )
+    pattern = pattern.where(~((pattern == "") & bull_engulf), "BULLISH_ENGULFING")
+    signal = signal.where(~((signal == "") & bull_engulf), "BULLISH")
+
+    # Bearish Engulfing: prev bullish, current bearish, current body engulfs prev body
+    bear_engulf = (
+        prev_is_bullish
+        & is_bearish
+        & (c < prev_o)
+        & (o > prev_c)
+        & (body > prev_body)
+        & (prev_trend == 1)
+    )
+    pattern = pattern.where(~((pattern == "") & bear_engulf), "BEARISH_ENGULFING")
+    signal = signal.where(~((signal == "") & bear_engulf), "BEARISH")
+
+    # Piercing Pattern: prev bearish, current opens below prev low,
+    #   closes above midpoint of prev body, downtrend
+    prev_mid = (prev_o + prev_c) / 2
+    piercing = (
+        prev_is_bearish
+        & is_bullish
+        & (o < prev_l)
+        & (c > prev_mid)
+        & (c < prev_o)
+        & (prev_trend == -1)
+    )
+    pattern = pattern.where(~((pattern == "") & piercing), "PIERCING")
+    signal = signal.where(~((signal == "") & piercing), "BULLISH")
+
+    # Dark Cloud Cover: prev bullish, current opens above prev high,
+    #   closes below midpoint of prev body, uptrend
+    prev_mid_bull = (prev_o + prev_c) / 2
+    dark_cloud = (
+        prev_is_bullish
+        & is_bearish
+        & (o > prev_h)
+        & (c < prev_mid_bull)
+        & (c > prev_o)
+        & (prev_trend == 1)
+    )
+    pattern = pattern.where(~((pattern == "") & dark_cloud), "DARK_CLOUD_COVER")
+    signal = signal.where(~((signal == "") & dark_cloud), "BEARISH")
+
+    # Bullish Harami: prev bearish long body, current small bullish body inside prev
+    bull_harami = (
+        prev_is_bearish
+        & is_bullish
+        & (o > prev_c)
+        & (c < prev_o)
+        & (body < prev_body * 0.5)
+        & (prev_trend == -1)
+    )
+    pattern = pattern.where(~((pattern == "") & bull_harami), "BULLISH_HARAMI")
+    signal = signal.where(~((signal == "") & bull_harami), "BULLISH")
+
+    # Bearish Harami: prev bullish long body, current small bearish body inside prev
+    bear_harami = (
+        prev_is_bullish
+        & is_bearish
+        & (o < prev_c)
+        & (c > prev_o)
+        & (body < prev_body * 0.5)
+        & (prev_trend == 1)
+    )
+    pattern = pattern.where(~((pattern == "") & bear_harami), "BEARISH_HARAMI")
+    signal = signal.where(~((signal == "") & bear_harami), "BEARISH")
+
+    # ---- Multi-candle patterns (3-candle) ----
+
+    prev2_o = o.shift(2)
+    prev2_c = c.shift(2)
+    prev2_is_bearish = prev2_c < prev2_o
+    prev2_is_bullish = prev2_c > prev2_o
+    prev_body_pct = prev_body / (prev_h - prev_l).replace(0, np.nan) * 100
+
+    # Morning Star: Day1 long bearish, Day2 small body (gap down), Day3 bullish closes above Day1 mid
+    day1_mid = (prev2_o + prev2_c) / 2
+    morning_star = (
+        prev2_is_bearish
+        & (prev_body_pct < 30)  # Day2 is small body (star)
+        & is_bullish
+        & (c > day1_mid)  # Day3 closes above Day1 midpoint
+        & (prev_trend.shift(2) == -1)  # downtrend context
+    )
+    pattern = pattern.where(~((pattern == "") & morning_star), "MORNING_STAR")
+    signal = signal.where(~((signal == "") & morning_star), "BULLISH")
+
+    # Evening Star: Day1 long bullish, Day2 small body (gap up), Day3 bearish closes below Day1 mid
+    evening_star = (
+        prev2_is_bullish
+        & (prev_body_pct < 30)  # Day2 is small body (star)
+        & is_bearish
+        & (c < day1_mid)  # Day3 closes below Day1 midpoint
+        & (prev_trend.shift(2) == 1)  # uptrend context
+    )
+    pattern = pattern.where(~((pattern == "") & evening_star), "EVENING_STAR")
+    signal = signal.where(~((signal == "") & evening_star), "BEARISH")
+
+    # Replace empty strings with None for cleaner CSV output
+    pattern = pattern.replace("", None)
+    signal = signal.replace("", None)
+
+    df = df.copy()
+    df["candle_pattern"] = pattern
+    df["candle_signal"] = signal
+    df["candle_body_pct"] = body_pct.round(2)
+    return df
+
+
+# ----------------------------------------------------------------------
+# Divergence detection (price vs indicators)
+# ----------------------------------------------------------------------
+
+
+def _find_pivots(series: pd.Series, order: int = 5) -> tuple:
+    """
+    Find local pivot highs and pivot lows.
+    `order` = number of bars on each side to confirm a pivot.
+    Returns (pivot_high_indices, pivot_high_values,
+             pivot_low_indices, pivot_low_values).
+    """
+    vals = series.values
+    n = len(vals)
+    ph_idx, ph_val = [], []
+    pl_idx, pl_val = [], []
+
+    for i in range(order, n - order):
+        if np.isnan(vals[i]):
+            continue
+        # Pivot high: vals[i] is greater than all neighbors
+        if all(
+            vals[i] > vals[i - j] for j in range(1, order + 1) if not np.isnan(vals[i - j])
+        ) and all(vals[i] > vals[i + j] for j in range(1, order + 1) if not np.isnan(vals[i + j])):
+            ph_idx.append(i)
+            ph_val.append(vals[i])
+        # Pivot low: vals[i] is less than all neighbors
+        if all(
+            vals[i] < vals[i - j] for j in range(1, order + 1) if not np.isnan(vals[i - j])
+        ) and all(vals[i] < vals[i + j] for j in range(1, order + 1) if not np.isnan(vals[i + j])):
+            pl_idx.append(i)
+            pl_val.append(vals[i])
+
+    return ph_idx, ph_val, pl_idx, pl_val
+
+
+def _detect_single_divergence(
+    price: pd.Series, indicator: pd.Series, pivot_order: int = 5, lookback: int = 14
+) -> tuple:
+    """
+    Detect regular and hidden divergences between price and an indicator.
+    Returns (bull_div_series, bear_div_series) as boolean pd.Series.
+    """
+    n = len(price)
+    bull_div = np.zeros(n, dtype=bool)
+    bear_div = np.zeros(n, dtype=bool)
+
+    # Price pivots
+    p_ph_idx, p_ph_val, p_pl_idx, p_pl_val = _find_pivots(price, pivot_order)
+    # Indicator pivots
+    i_ph_idx, i_ph_val, i_pl_idx, i_pl_val = _find_pivots(indicator, pivot_order)
+
+    # Regular Bullish: price lower low, indicator higher low
+    for k in range(1, len(p_pl_idx)):
+        if p_pl_val[k] < p_pl_val[k - 1]:  # price made lower low
+            # Find nearest indicator pivot low near this price pivot
+            pi = p_pl_idx[k]
+            candidates = [(j, v) for j, v in zip(i_pl_idx, i_pl_val) if abs(j - pi) <= lookback]
+            prev_candidates = [
+                (j, v) for j, v in zip(i_pl_idx, i_pl_val) if abs(j - p_pl_idx[k - 1]) <= lookback
+            ]
+            if candidates and prev_candidates:
+                curr_ind = min(candidates, key=lambda x: abs(x[0] - pi))[1]
+                prev_ind = min(prev_candidates, key=lambda x: abs(x[0] - p_pl_idx[k - 1]))[1]
+                if curr_ind > prev_ind:  # indicator higher low
+                    bull_div[pi] = True
+
+    # Regular Bearish: price higher high, indicator lower high
+    for k in range(1, len(p_ph_idx)):
+        if p_ph_val[k] > p_ph_val[k - 1]:  # price made higher high
+            pi = p_ph_idx[k]
+            candidates = [(j, v) for j, v in zip(i_ph_idx, i_ph_val) if abs(j - pi) <= lookback]
+            prev_candidates = [
+                (j, v) for j, v in zip(i_ph_idx, i_ph_val) if abs(j - p_ph_idx[k - 1]) <= lookback
+            ]
+            if candidates and prev_candidates:
+                curr_ind = min(candidates, key=lambda x: abs(x[0] - pi))[1]
+                prev_ind = min(prev_candidates, key=lambda x: abs(x[0] - p_ph_idx[k - 1]))[1]
+                if curr_ind < prev_ind:  # indicator lower high
+                    bear_div[pi] = True
+
+    # Hidden Bullish: price higher low, indicator lower low
+    for k in range(1, len(p_pl_idx)):
+        if p_pl_val[k] > p_pl_val[k - 1]:  # price higher low
+            pi = p_pl_idx[k]
+            candidates = [(j, v) for j, v in zip(i_pl_idx, i_pl_val) if abs(j - pi) <= lookback]
+            prev_candidates = [
+                (j, v) for j, v in zip(i_pl_idx, i_pl_val) if abs(j - p_pl_idx[k - 1]) <= lookback
+            ]
+            if candidates and prev_candidates:
+                curr_ind = min(candidates, key=lambda x: abs(x[0] - pi))[1]
+                prev_ind = min(prev_candidates, key=lambda x: abs(x[0] - p_pl_idx[k - 1]))[1]
+                if curr_ind < prev_ind:  # indicator lower low
+                    bull_div[pi] = True
+
+    # Hidden Bearish: price lower high, indicator higher high
+    for k in range(1, len(p_ph_idx)):
+        if p_ph_val[k] < p_ph_val[k - 1]:  # price lower high
+            pi = p_ph_idx[k]
+            candidates = [(j, v) for j, v in zip(i_ph_idx, i_ph_val) if abs(j - pi) <= lookback]
+            prev_candidates = [
+                (j, v) for j, v in zip(i_ph_idx, i_ph_val) if abs(j - p_ph_idx[k - 1]) <= lookback
+            ]
+            if candidates and prev_candidates:
+                curr_ind = min(candidates, key=lambda x: abs(x[0] - pi))[1]
+                prev_ind = min(prev_candidates, key=lambda x: abs(x[0] - p_ph_idx[k - 1]))[1]
+                if curr_ind > prev_ind:  # indicator higher high
+                    bear_div[pi] = True
+
+    return (
+        pd.Series(bull_div, index=price.index),
+        pd.Series(bear_div, index=price.index),
+    )
+
+
+def detect_divergences(df: pd.DataFrame, pivot_order: int = 5, lookback: int = 14) -> pd.DataFrame:
+    """
+    Detect divergences between price and multiple indicators.
+    Adds boolean columns div_<ind>_bull / div_<ind>_bear plus a summary.
+    """
+    df = df.copy()
+    price = df["close"]
+
+    indicators = {
+        "rsi": df.get("rsi"),
+        "macd": df.get("macd_hist"),
+        "stoch": df.get("stoch_k"),
+        "adx": df.get("adx"),
+        "cci": df.get("cci"),
+    }
+    # OBV only if we have volume
+    if "obv" in df.columns:
+        indicators["obv"] = df["obv"]
+
+    summary_parts = []
+    for name, ind_series in indicators.items():
+        if ind_series is None or ind_series.isna().all():
+            df[f"div_{name}_bull"] = False
+            df[f"div_{name}_bear"] = False
+            continue
+        bull, bear = _detect_single_divergence(price, ind_series, pivot_order, lookback)
+        df[f"div_{name}_bull"] = bull
+        df[f"div_{name}_bear"] = bear
+        summary_parts.append((name, bull, bear))
+
+    # Build summary string per bar
+    def _build_summary(row):
+        parts = []
+        for name, _, _ in summary_parts:
+            if row.get(f"div_{name}_bull", False):
+                parts.append(f"{name.upper()}_BULL")
+            if row.get(f"div_{name}_bear", False):
+                parts.append(f"{name.upper()}_BEAR")
+        return ",".join(parts) if parts else None
+
+    df["divergence_summary"] = df.apply(_build_summary, axis=1)
+    return df
+
+
+# ----------------------------------------------------------------------
+# Fibonacci retracement / extension levels
+# ----------------------------------------------------------------------
+
+
+def compute_fibonacci_levels(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute Fibonacci retracement and extension levels anchored to each
+    supertrend trend segment's swing high/low.
+    """
+    df = df.copy()
+    trend = df["st_trend"].values
+    high = df["high"].values
+    low = df["low"].values
+    close = df["close"].values
+    n = len(df)
+
+    fib_ratios = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0]
+    ext_ratios = [1.272, 1.618, 2.0, 2.618]
+
+    # Output arrays
+    fib_swing_high = np.full(n, np.nan)
+    fib_swing_low = np.full(n, np.nan)
+    fib_levels = {r: np.full(n, np.nan) for r in fib_ratios + ext_ratios}
+    fib_nearest = [None] * n
+    fib_dist_pct = np.full(n, np.nan)
+
+    # Track segment
+    seg_start = 0
+    seg_high = high[0] if not np.isnan(high[0]) else 0
+    seg_low = low[0] if not np.isnan(low[0]) else 0
+
+    for i in range(n):
+        # Detect trend change → reset segment
+        if i > 0 and trend[i] != trend[i - 1]:
+            seg_start = i
+            seg_high = high[i]
+            seg_low = low[i]
+        else:
+            if not np.isnan(high[i]):
+                seg_high = max(seg_high, high[i])
+            if not np.isnan(low[i]):
+                seg_low = min(seg_low, low[i])
+
+        fib_swing_high[i] = seg_high
+        fib_swing_low[i] = seg_low
+
+        diff = seg_high - seg_low
+        if diff <= 0 or np.isnan(diff):
+            continue
+
+        # In uptrend: retracement from high down; in downtrend: from low up
+        if trend[i] == 1:  # uptrend — retracement is measured from high downward
+            for r in fib_ratios:
+                fib_levels[r][i] = seg_high - r * diff
+            for r in ext_ratios:
+                fib_levels[r][i] = seg_high + (r - 1.0) * diff
+        else:  # downtrend — retracement is measured from low upward
+            for r in fib_ratios:
+                fib_levels[r][i] = seg_low + r * diff
+            for r in ext_ratios:
+                fib_levels[r][i] = seg_low - (r - 1.0) * diff
+
+        # Find nearest Fib level to current close
+        c = close[i]
+        if np.isnan(c):
+            continue
+        best_r, best_dist = None, float("inf")
+        for r in fib_ratios + ext_ratios:
+            lv = fib_levels[r][i]
+            if np.isnan(lv):
+                continue
+            d = abs(c - lv)
+            if d < best_dist:
+                best_dist = d
+                best_r = r
+        if best_r is not None:
+            fib_nearest[i] = best_r
+            fib_dist_pct[i] = best_dist / c * 100 if c != 0 else np.nan
+
+    df["fib_swing_high"] = fib_swing_high
+    df["fib_swing_low"] = fib_swing_low
+    for r in fib_ratios + ext_ratios:
+        df[f"fib_{r}"] = np.round(fib_levels[r], 2)
+    df["fib_nearest_level"] = fib_nearest
+    df["fib_distance_pct"] = np.round(fib_dist_pct, 4)
+    return df
+
+
+# ----------------------------------------------------------------------
+# Touch counting within supertrend trend segments
+# ----------------------------------------------------------------------
+
+
+def compute_touch_number(df: pd.DataFrame, touch_pct: float) -> pd.DataFrame:
+    """
+    Walk through bars and count which touch # this is within the current
+    supertrend trend segment.
+    Adds: trend_touch_number, trend_start_idx, bars_since_trend_start.
+    """
+    df = df.copy()
+    trend = df["st_trend"].values
+    close = df["close"].values
+    lower = df["st_lowerband"].values
+    upper = df["st_upperband"].values
+    n = len(df)
+
+    touch_num = np.zeros(n, dtype=int)
+    trend_start_arr = np.zeros(n, dtype=int)
+    bars_since = np.zeros(n, dtype=int)
+
+    seg_start = 0
+    counter = 0
+
+    for i in range(n):
+        if i > 0 and trend[i] != trend[i - 1]:
+            seg_start = i
+            counter = 0
+
+        bars_since[i] = i - seg_start
+        trend_start_arr[i] = seg_start
+
+        # Check if this bar is a touch
+        if trend[i] == 1:  # uptrend, active band = lower
+            band = lower[i]
+        else:
+            band = upper[i]
+
+        if not np.isnan(band) and not np.isnan(close[i]) and close[i] != 0:
+            dist = abs(close[i] - band) / close[i] * 100
+            if dist <= touch_pct:
+                counter += 1
+                touch_num[i] = counter
+
+    df["trend_touch_number"] = touch_num
+    df["trend_start_idx"] = trend_start_arr
+    df["bars_since_trend_start"] = bars_since
+    return df
+
+
 # ----------------------------------------------------------------------
 # Full indicator pipeline
 # ----------------------------------------------------------------------
@@ -204,6 +739,7 @@ def build_indicators(
 
     # RSI
     df["rsi"] = rsi(df["close"], rsi_period)
+    df["rsi_sma"] = df["rsi"].rolling(rsi_period).mean()
 
     # EMAs / SMAs
     for p in ema_periods:
@@ -249,9 +785,169 @@ def build_indicators(
     df["vol_sma"] = df["volume"].rolling(vol_avg_period).mean()
     df["vol_ratio"] = df["volume"] / df["vol_sma"].replace(0, np.nan)
 
+    # OBV
+    df["obv"] = obv(df["close"], df["volume"])
+
+    # CCI
+    df["cci"] = cci(df, period=20)
+
     # OI delta (only if OI column present - e.g. futures data)
     if "oi" in df.columns:
         df["oi_change"] = df["oi"].diff()
+
+    # Candlestick pattern recognition
+    df = detect_candlestick_patterns(df)
+
+    # Divergence detection
+    df = detect_divergences(df, pivot_order=5, lookback=14)
+
+    # Fibonacci levels (requires st_trend)
+    df = compute_fibonacci_levels(df)
+
+    # Fractal zones
+    df = compute_fractal_zones(df)
+
+    return df
+
+
+def compute_fractal_zones(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    high = df["high"].values
+    low = df["low"].values
+    open_ = df["open"].values
+    close = df["close"].values
+    atr_val = df["atr"].values
+    trend = df["st_trend"].values
+    lowerband = df["st_lowerband"].values
+    upperband = df["st_upperband"].values
+    volume = df["volume"].values
+
+    # 6-period moving average of volume for fractal confirmation
+    vol_ma = df["volume"].rolling(6).mean().values
+
+    n = len(df)
+
+    res_zone_high = np.nan
+    res_zone_low = np.nan
+    res_rejection_ratio = np.nan
+    res_zone_width_pct = np.nan
+    res_retest_count = 0
+    res_in_retest = False
+
+    sup_zone_high = np.nan
+    sup_zone_low = np.nan
+    sup_rejection_ratio = np.nan
+    sup_zone_width_pct = np.nan
+    sup_retest_count = 0
+    sup_in_retest = False
+
+    nearest_zone_price = np.full(n, np.nan)
+    nearest_zone_type = np.full(n, None, dtype=object)
+    zone_distance_pct = np.full(n, np.nan)
+    zone_strength_score = np.full(n, np.nan)
+
+    for i in range(n):
+        ab = lowerband[i] if trend[i] == 1 else upperband[i]
+
+        # 1. Update retests for existing zones up to current bar
+        if not np.isnan(res_zone_low):
+            approach_threshold = res_zone_low * (1 - 0.0015)
+            if close[i] > res_zone_high:
+                res_in_retest = False
+            else:
+                if high[i] >= approach_threshold:
+                    if not res_in_retest:
+                        res_retest_count += 1
+                        res_in_retest = True
+                else:
+                    res_in_retest = False
+
+        if not np.isnan(sup_zone_high):
+            approach_threshold = sup_zone_high * (1 + 0.0015)
+            if close[i] < sup_zone_low:
+                sup_in_retest = False
+            else:
+                if low[i] <= approach_threshold:
+                    if not sup_in_retest:
+                        sup_retest_count += 1
+                        sup_in_retest = True
+                else:
+                    sup_in_retest = False
+
+        # 2. Check for new fractals formed at i-3 (requires 6 bars context)
+        if i >= 5:
+            p = i - 3
+            # Swing High
+            if (
+                high[p] > high[p - 1]
+                and high[p - 1] > high[p - 2]
+                and high[p + 1] < high[p]
+                and high[p + 2] < high[p + 1]
+                and volume[p] > vol_ma[p]
+            ):
+                res_zone_high = high[p]
+                res_zone_low = max(open_[p], close[p])
+                res_rejection_ratio = (high[p] - low[p]) / atr_val[p] if atr_val[p] else 0
+                zw_pct = abs(res_zone_high - res_zone_low) / res_zone_high
+                res_zone_width_pct = max(zw_pct, 1e-6)
+                res_retest_count = 0
+                res_in_retest = False
+
+            # Swing Low
+            if (
+                low[p] < low[p - 1]
+                and low[p - 1] < low[p - 2]
+                and low[p + 1] > low[p]
+                and low[p + 2] > low[p + 1]
+                and volume[p] > vol_ma[p]
+            ):
+                sup_zone_low = low[p]
+                sup_zone_high = min(open_[p], close[p])
+                sup_rejection_ratio = (high[p] - low[p]) / atr_val[p] if atr_val[p] else 0
+                zw_pct = abs(sup_zone_high - sup_zone_low) / sup_zone_low
+                sup_zone_width_pct = max(zw_pct, 1e-6)
+                sup_retest_count = 0
+                sup_in_retest = False
+
+        # 3. Calculate distance and assign nearest zone attributes for current bar
+        if not np.isnan(ab):
+            dist_res = abs(ab - res_zone_high) if not np.isnan(res_zone_high) else np.inf
+            dist_sup = abs(ab - sup_zone_low) if not np.isnan(sup_zone_low) else np.inf
+
+            if np.isinf(dist_res) and np.isinf(dist_sup):
+                continue
+
+            if dist_res <= dist_sup:
+                nearest_zone_price[i] = res_zone_high
+                nearest_zone_type[i] = "Resistance"
+                zone_distance_pct[i] = dist_res / ab * 100
+                zone_strength_score[i] = (
+                    res_rejection_ratio * (1 / res_zone_width_pct) * (1 + 0.1 * res_retest_count)
+                )
+            else:
+                nearest_zone_price[i] = sup_zone_low
+                nearest_zone_type[i] = "Support"
+                zone_distance_pct[i] = dist_sup / ab * 100
+                zone_strength_score[i] = (
+                    sup_rejection_ratio * (1 / sup_zone_width_pct) * (1 + 0.1 * sup_retest_count)
+                )
+
+    df["nearest_fractal_zone_price"] = np.round(nearest_zone_price, 2)
+    df["nearest_fractal_zone_type"] = nearest_zone_type
+    df["fractal_zone_distance_pct"] = np.round(zone_distance_pct, 4)
+    df["fractal_zone_strength_score"] = np.round(zone_strength_score, 4)
+
+    # Calculate quartiles for buckets across the full series
+    scores = df["fractal_zone_strength_score"].dropna()
+    df["fractal_zone_strength_bucket"] = None
+    if len(scores) > 3:
+        try:
+            buckets = pd.qcut(scores, 4, labels=["weak", "medium", "strong", "very_strong"])
+        except ValueError:
+            buckets = pd.qcut(
+                scores.rank(method="first"), 4, labels=["weak", "medium", "strong", "very_strong"]
+            )
+        df.loc[scores.index, "fractal_zone_strength_bucket"] = buckets
 
     return df
 
@@ -262,8 +958,11 @@ def detect_supertrend_touches(df: pd.DataFrame, touch_pct: float) -> pd.DataFram
     supertrend band (lower band when trend is green/up, upper band when
     trend is red/down). Returns only the rows that qualify as a "touch",
     tagged with signal_type BUY_TOUCH / SELL_TOUCH.
+
+    Also computes the touch number within the current supertrend trend segment.
     """
-    d = df.copy()
+    # First compute touch numbers on the full dataframe
+    d = compute_touch_number(df, touch_pct)
 
     is_up = d["st_trend"] == 1
     is_down = d["st_trend"] == -1
@@ -353,8 +1052,12 @@ def evaluate_touch_outcomes(
             (reversal_close - touch_close) * direction if not pd.isna(reversal_close) else np.nan
         )
 
+        bounce_pct = round(peak_bounce / touch_close * 100, 4) if touch_close != 0 else 0.0
+
         records.append(
             {
+                "bounced": threshold_hit,
+                "bounce_pct": bounce_pct,
                 "peak_bounce_points": round(peak_bounce, 4),
                 "peak_bounce_timestamp": peak_ts,
                 "points_at_reversal": points_at_reversal,
@@ -393,13 +1096,13 @@ if not OPENALGO_API_KEY:
 # OpenAlgo broker mapping -- NSE_INDEX for spot index, or NFO for futures
 # (e.g. {"symbol": "NIFTY28AUG25FUT", "exchange": "NFO"}).
 SYMBOLS = [
-    {"symbol": "NIFTY", "exchange": "NSE_INDEX"},
-    {"symbol": "BANKNIFTY", "exchange": "NSE_INDEX"},
+    {"symbol": "RELIANCE", "exchange": "NSE"},
 ]
 
 
 INTERVAL = sys.argv[1] if len(sys.argv) > 1 else "5m"
-START_DATE = "2026-01-01"
+HTF_INTERVAL = sys.argv[2] if len(sys.argv) > 2 else None
+START_DATE = "2024-01-01"
 END_DATE = "2026-07-19"
 
 # Supertrend
@@ -415,7 +1118,8 @@ TOUCH_PCT = 0.15
 # BANKNIFTY move on very different point scales.
 BOUNCE_POINTS_BY_SYMBOL = {
     "NIFTY": 50,
-    "BANKNIFTY": 100,
+    "BANKNIFTY": 300,
+    "RELIANCE": 10,
 }
 DEFAULT_BOUNCE_POINTS = 50  # used if a symbol isn't listed above
 
@@ -534,6 +1238,11 @@ def scan_symbol(client, sym_cfg, vix_daily):
     if INCLUDE_VIX:
         df = attach_vix(df, vix_daily)
 
+    if HTF_INTERVAL:
+        print(f"  Fetching HTF {symbol} ({exchange}), interval={HTF_INTERVAL} ...")
+        df_htf = fetch_history(client, symbol, exchange, HTF_INTERVAL, START_DATE, END_DATE)
+        print(f"    {len(df_htf)} HTF bars fetched: {df_htf.index.min()} -> {df_htf.index.max()}")
+
     print("  Computing indicators ...")
     ind = build_indicators(
         df,
@@ -554,6 +1263,35 @@ def scan_symbol(client, sym_cfg, vix_daily):
         adx_period=ADX_PERIOD,
         vol_avg_period=VOL_AVG_PERIOD,
     )
+
+    if HTF_INTERVAL:
+        print("  Computing HTF indicators and merging ...")
+        ind_htf = build_indicators(
+            df_htf,
+            st_period=ST_PERIOD,
+            st_mult=ST_MULTIPLIER,
+            ema_periods=EMA_PERIODS,
+            sma_periods=SMA_PERIODS,
+            rsi_period=RSI_PERIOD,
+            atr_period=ATR_PERIOD,
+            macd_fast=MACD_FAST,
+            macd_slow=MACD_SLOW,
+            macd_signal=MACD_SIGNAL,
+            bb_period=BB_PERIOD,
+            bb_std=BB_STD,
+            stoch_k=STOCH_K,
+            stoch_d=STOCH_D,
+            stoch_smooth=STOCH_SMOOTH,
+            adx_period=ADX_PERIOD,
+            vol_avg_period=VOL_AVG_PERIOD,
+        )
+
+        # Prefix HTF columns to avoid collision
+        ind_htf.columns = [f"htf_{c}" for c in ind_htf.columns]
+
+        # Forward fill merge HTF onto LTF
+        ind_htf_aligned = ind_htf.reindex(ind.index, method="ffill")
+        ind = ind.join(ind_htf_aligned)
 
     touches = detect_supertrend_touches(ind, touch_pct=TOUCH_PCT)
     touches.insert(0, "symbol", symbol)
