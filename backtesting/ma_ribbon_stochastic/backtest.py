@@ -1,4 +1,5 @@
 import os
+
 import sys
 from pathlib import Path
 
@@ -6,6 +7,7 @@ import numpy as np
 import pandas as pd
 import vectorbt as vbt
 from openalgo import ta
+from typing import Callable
 
 BASE_DIR = Path("/root/openalgo-autonomous-research")
 sys.path.append(str(BASE_DIR))
@@ -218,6 +220,64 @@ def run_backtest(df, symbol="SBIN", timeframe="D", init_cash=1_000_000, stoch_va
         "pf_short": pf_short,
         "pf_bi": pf_bi,
     }
+
+
+class BacktestAgent:
+    """Encapsulates backtesting workflow with caching and optional resampling.
+
+    Example:
+        agent = BacktestAgent()
+        result = agent.run(symbol="SBIN", exchange="NSE", timeframe="D")
+    """
+    def __init__(self, cache_dir: Path | None = None, fees: float = 0.00111, fixed_fees: float = 20.0):
+        self.cache_dir = cache_dir if cache_dir is not None else (BASE_DIR / "data")
+        self.fees = fees
+        self.fixed_fees = fixed_fees
+        self._df_cache: dict[tuple[str, str, str], pd.DataFrame] = {}
+
+    def _load_data_cached(self, symbol: str = "SBIN", exchange: str = "NSE", timeframe: str = "D") -> pd.DataFrame | None:
+        """Load data using existing ``load_data`` with in‑process caching."""
+        key = (symbol, exchange, timeframe)
+        if key in self._df_cache:
+            return self._df_cache[key]
+        df = load_data(symbol=symbol, exchange=exchange, timeframe=timeframe)
+        if df is not None:
+            self._df_cache[key] = df
+        return df
+
+    def run(
+        self,
+        symbol: str = "SBIN",
+        exchange: str = "NSE",
+        timeframe: str = "D",
+        init_cash: float = 1_000_000,
+        stoch_variant: str = "sequence",
+        strategy_func: Callable[..., dict] | None = None,
+        **kwargs,
+    ) -> dict:
+        """Execute the backtest using a provided strategy function.
+
+        Parameters
+        ----------
+        symbol, exchange, timeframe, init_cash, stoch_variant : as before.
+        strategy_func : Callable, optional
+            A function that takes a DataFrame and returns a result dict. If ``None``
+            the default ``run_backtest`` (MA Ribbon + Stochastic) is used, preserving
+            backward compatibility.
+        **kwargs : dict
+            Additional keyword arguments passed to the strategy function.
+        """
+        df = self._load_data_cached(symbol=symbol, exchange=exchange, timeframe=timeframe)
+        if df is None:
+            raise ValueError(f"Unable to load data for {symbol}/{exchange} ({timeframe})")
+        # Choose strategy implementation
+        if strategy_func is None:
+            strategy_func = run_backtest
+        # Execute strategy
+        res = strategy_func(df, symbol=symbol, timeframe=timeframe, init_cash=init_cash, stoch_variant=stoch_variant, **kwargs)
+        # Generate summary metrics
+        res["summary"] = generate_summary(res)
+        return res
 
 
 def generate_summary(res, df_bench=None):
