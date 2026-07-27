@@ -8,7 +8,8 @@ from openalgo import ta
 
 BASE_DIR = Path("/root/openalgo-autonomous-research")
 sys.path.append(str(BASE_DIR / "backtesting" / "ma_ribbon_stochastic"))
-from backtest import load_data
+
+from backtest import load_data  # noqa: E402
 
 
 def generate_sequence_signals(

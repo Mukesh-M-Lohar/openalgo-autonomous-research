@@ -216,7 +216,7 @@ def detect_candlestick_patterns(df: pd.DataFrame) -> pd.DataFrame:
     Detect single-candle and multi-candle patterns per Zerodha Varsity.
     Adds columns: candle_pattern, candle_signal, candle_body_pct.
     """
-    o, h, l, c = df["open"], df["high"], df["low"], df["close"]
+    o, h, l, c = df["open"], df["high"], df["low"], df["close"]  # noqa: E741
     body = (c - o).abs()
     candle_range = (h - l).replace(0, np.nan)
     body_pct = body / candle_range * 100  # body as % of range

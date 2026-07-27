@@ -10,10 +10,10 @@ from dotenv import find_dotenv, load_dotenv
 project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root))
 
-from openalgo import api
+from openalgo import api  # noqa: E402
 
-from scripts.supertrend_scanner.indicators import bollinger_bands
-from scripts.supertrend_scanner.ss_scanner import build_indicators, fetch_history
+from scripts.supertrend_scanner.indicators import bollinger_bands  # noqa: E402
+from scripts.supertrend_scanner.ss_scanner import build_indicators, fetch_history  # noqa: E402
 
 # --- Config ---
 load_dotenv(find_dotenv(), override=False)
@@ -41,6 +41,7 @@ def detect_bb_touches(df: pd.DataFrame) -> pd.DataFrame:
     # We only care about lower band for BUY touches for this mean reversion strategy
     # Or upper band for SELL touches. Let's do both to double the dataset.
     touched_lower = d["low"] <= d["bb_lower"]
+    o, h, l, c = df["open"], df["high"], df["low"], df["close"]  # noqa: E741
     touched_upper = d["high"] >= d["bb_upper"]
 
     d["signal_type"] = np.where(

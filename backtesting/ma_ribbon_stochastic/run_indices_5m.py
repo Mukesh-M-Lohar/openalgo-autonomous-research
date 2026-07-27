@@ -3,8 +3,8 @@ from pathlib import Path
 
 BASE_DIR = Path("/root/openalgo-autonomous-research")
 sys.path.append(str(BASE_DIR / "backtesting" / "ma_ribbon_stochastic"))
-from backtest import OUTPUT_DIR, generate_summary, load_data, run_backtest
-from generate_charts import plot_portfolio_html
+from backtest import OUTPUT_DIR, generate_summary, load_data, run_backtest  # noqa: E402
+from generate_charts import plot_portfolio_html  # noqa: E402
 
 
 def main():

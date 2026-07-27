@@ -11,6 +11,7 @@ from backtest import load_data, run_backtest
 OUTPUT_DIR = BASE_DIR / "backtesting" / "ma_ribbon_stochastic"
 # ruff: noqa: E402
 
+
 def plot_portfolio_html(res, filepath):
     pf = res["pf_bi"]
     df = res["df"]

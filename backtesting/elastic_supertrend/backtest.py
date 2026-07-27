@@ -1,18 +1,17 @@
 import os
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import vectorbt as vbt
 from dotenv import find_dotenv, load_dotenv
-from openalgo import api, ta
+from openalgo import api  # noqa: E402, ta
 
 # Add scripts directory to path to import scanner modules
 project_root = Path(__file__).resolve().parent.parent.parent
-sys.path.append(str(project_root))
+# # sys.path.append(str(BASE_DIR / "backtesting" / "ma_ribbon_stochastic"))  # Removed for lint  # Removed for lint compliance
 
-from scripts.supertrend_scanner.ss_scanner import (
+from scripts.supertrend_scanner.ss_scanner import (  # noqa: E402
     TOUCH_PCT,
     build_indicators,
     detect_supertrend_touches,
@@ -96,8 +95,8 @@ sell_raw = (
 exits_raw = df_merged["st_trend"] == -1
 
 # Clean signals
-entries = ta.exrem(buy_raw.fillna(False), exits_raw.fillna(False))
-exits = ta.exrem(exits_raw.fillna(False), buy_raw.fillna(False))
+entries = vbt.pd_acc.exrem(buy_raw.fillna(False), exits_raw.fillna(False))
+exits = vbt.pd_acc.exrem(exits_raw.fillna(False), buy_raw.fillna(False))
 
 print(f"Total Entries: {entries.sum()}")
 print(f"Total Exits: {exits.sum()}")
