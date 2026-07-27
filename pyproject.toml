@@ -23,6 +23,10 @@ dependencies = [
     "optuna>=3.5.0",
     "matplotlib>=3.8.0",
     "openalgo>=2.0.3",
+    "pyexcel>=0.7.6",
+    "openpyxl>=3.1.5",
+    "shap>=0.52.0",
+    "vectorbt>=0.28.2",
 ]
 
 [project.optional-dependencies]
@@ -73,6 +77,7 @@ venv = ".venv"
 pythonPath = ".venv/bin/python3.12"
 pythonVersion = "3.12"
 extraPaths = [
+    ".",
     "src",
     "scripts",
     "scripts/supertrend_scanner",
